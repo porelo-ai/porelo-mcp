@@ -5,6 +5,7 @@ What holds and why: one row per decision, and its full text below.
 | Covers | What holds |
 |---|---|
 | MCP layer | [MCP is spoken by a small layer of its own, not by an SDK](#mcp-is-spoken-by-a-small-layer-of-its-own-not-by-an-sdk) |
+| MCP version | [It speaks the versions with `initialize`, up to `2025-11-25`](#it-speaks-the-versions-with-initialize-up-to-2025-11-25) |
 
 ## MCP is spoken by a small layer of its own, not by an SDK
 
@@ -57,3 +58,23 @@ images with the pinned GraalVM and `-march=x86-64`:
 What would change the answer: a fault found in the HTTP reader that a bound does not settle; a need for request bodies
 in chunked encoding, for many sessions at once, or for server-to-client streams beyond what one process per task needs.
 Then Jetty's Unix-socket connector carries HTTP, still without the SDK.
+
+## It speaks the versions with `initialize`, up to `2025-11-25`
+
+`porelo-mcp` answers `initialize` with the version the client asks when it is `2025-11-25`, `2025-06-18` or `2025-03-26`,
+and with `2025-11-25` otherwise. It does not speak `2026-07-28` yet.
+
+- `2026-07-28` removes `initialize`, `ping` and sessions, carries the version and the client's capabilities in every
+  request's `_meta`, requires `server/discover`, a `resultType` in every result, and on HTTP the headers
+  `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` checked against the body. That is a protocol of its own beside the
+  first, not a field more.
+- The MCP clients of Claude Code, Codex and agy each offer both eras. The specification has such a client fall back to
+  `initialize` when a server does not answer `server/discover` as a modern server does, so all three reach a server of
+  the first era.
+- Claude Code's client checks `structuredContent` against a tool's `outputSchema` only when `isError` is false, read in
+  its executable. So a refusal can carry `{"error", "parameters"}` as its structured content, although that is not the
+  method's reply.
+
+What would change the answer: a client the agents use that offers only `2026-07-28`, or a client that drops the first
+era.
+

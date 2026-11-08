@@ -1,6 +1,6 @@
 # MC02 — Tools Generated From The Daemon's Interface
 
-**Status:** Implementing
+**Status:** Review
 **Size:** M - a Varlink interface parser, the schema mapping and the call path, with a stand-in daemon for the tests.
 
 **What must be true.** An agent sees every method the daemon describes in `org.fuin.porelo.Tasks1` as an MCP tool with
@@ -21,7 +21,9 @@ refusal are the daemon's, a refusal with its error name and parameters as they c
   structured content `{"error": <full name>, "parameters": {...}}`. A name that is no tool is JSON-RPC `-32602`; a
   daemon that cannot be reached is JSON-RPC `-32603` naming the socket. No call carries `more: true`.
 - The MCP layer is its own, over `porelo-wire`'s `Json.parseDecimals`, as `doc/decisions.md` says: `initialize`,
-  `tools/list`, `tools/call` and `ping`, the `id` and every number passed on exactly as they came.
+  `tools/list`, `tools/call` and `ping`, the `id` and every number passed on exactly as they came. It speaks the
+  versions with `initialize` up to `2025-11-25`, as `doc/decisions.md` says, and answers `server/discover` as an unknown
+  method, so a client of both eras falls back.
 - A stand-in daemon in the tests over `porelo-wire`'s `VarlinkServer`, described by a given interface. Where a test is
   about the contract, it serves the real `Tasks1` interface: from the published artifact that carries it, or until one
   does, the interface files taken from porelo's main at a named commit, that commit written beside them.
@@ -35,10 +37,3 @@ refusal are the daemon's, a refusal with its error name and parameters as they c
   method added to the stand-in's interface appears as a tool with no change to the code.
 - A parameter the stand-in refuses as `org.varlink.service.InvalidParameter` reaches the agent as that refusal.
 - Nothing in the code names a method of `Tasks1`.
-
-## To be checked
-
-- What the MCP version `2026-07-28` changes against `2025-11-25` for a server with tools only, read in its
-  specification: the clients of Claude Code, Codex and agy offer both, and `initialize` answers the newest both sides
-  speak.
-- Whether `porelo-wire` carries the `Tasks1` interface files as resources; until it does, the named commit's files.

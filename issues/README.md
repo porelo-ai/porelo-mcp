@@ -8,11 +8,6 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="mc01"></a>[MC01](MC01-The-MCP-SDK-Chosen-By-Measurement.md) | S | - | The MCP layer built on a Java MCP SDK or on a small layer of its own, chosen by measurement: a layer of its own, a third of the SDK's size and an eighth of its start. |
-
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
 | <a id="mc02"></a>[MC02](MC02-Tools-Generated-From-The-Daemon-s-Interface.md) | M | - | Every method the daemon describes in `Tasks1` an MCP tool, its schemas from the Varlink types, its answers and refusals the daemon's, tested against a stand-in daemon. |
 
 ## Backlog
@@ -29,3 +24,4 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="mc07"></a>[MC07](MC07-Streams-As-MCP-Progress.md) | - | - | A method that answers only as a stream callable as a tool, its replies as MCP progress. |
+| <a id="mc08"></a>[MC08](MC08-MCP-2026-07-28-Spoken.md) | - | - | A client that offers only MCP `2026-07-28` reaches the tools, over stdio and HTTP. |

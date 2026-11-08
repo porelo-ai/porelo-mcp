@@ -20,6 +20,9 @@ HTTP on its Unix socket, to the person's own user alone and only with the token 
   connections served apart, the head at most 16 KiB and 64 lines, the body at most 1 MiB, strict `\r\n` lines, `400`
   and close on `Transfer-Encoding`, on a missing, repeated or non-decimal `Content-Length`, on a short body and on a
   repeated `Authorization`; `404` off `/mcp` and `405` for any method but `POST`, both only after the token.
+- A client of both MCP eras first sends a request of `2026-07-28`, with `MCP-Protocol-Version: 2026-07-28` and
+  `Mcp-Method`, and falls back to `initialize` on a `4xx` without a modern error body. Such a request, once past the
+  token, gets `400` with a plain JSON-RPC error, so the fallback happens.
 - Every HTTP request needs `Authorization: Bearer <token>`; the SHA-256 digests of the expected and the presented token
   are compared with `MessageDigest.isEqual`; otherwise `401` with no detail. The token is never logged.
 - Exit codes: 0 when stopped on `SIGTERM` or `SIGINT`, which close the socket and remove the path it bound itself; 1 when

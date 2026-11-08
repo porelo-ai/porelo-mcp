@@ -1,0 +1,2 @@
+title: Offer every method the daemon describes in its Tasks1 interface as an MCP tool, with input and output schemas from its Varlink types, passing each call on unchanged and each refusal back with its name and parameters.
+type: added
