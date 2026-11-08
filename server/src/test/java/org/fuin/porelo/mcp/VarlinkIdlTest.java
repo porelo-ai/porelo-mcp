@@ -40,9 +40,9 @@ class VarlinkIdlTest {
                         error Refused (reason: string)
                         """);
 
-        assertThat(parsed.name()).isEqualTo("org.example.Test1");
+        assertThat(parsed.name()).as("the interface's name").isEqualTo("org.example.Test1");
         VarlinkInterface.Method paint = parsed.methods().getFirst();
-        assertThat(paint.description()).isEqualTo("Paints.");
+        assertThat(paint.description()).as("the method's comment").isEqualTo("Paints.");
         assertThat(paint.input().fields())
                 .as("each field with its own type and comment")
                 .containsExactly(
@@ -66,6 +66,7 @@ class VarlinkIdlTest {
                                                 new VarlinkType.Member("fine", ""),
                                                 new VarlinkType.Member("coarse", "")))));
         assertThat(parsed.types().get("Colour"))
+                .as("a declared enumeration with its comments")
                 .isEqualTo(
                         new VarlinkInterface.Declared(
                                 "Colour",
@@ -76,6 +77,7 @@ class VarlinkIdlTest {
                                                 new VarlinkType.Member("GREEN", "")))));
         assertThat(parsed.errors())
                 .extracting(VarlinkInterface.ErrorType::name)
+                .as("the declared error")
                 .containsExactly("Refused");
 
         @SuppressWarnings("unchecked")
@@ -92,16 +94,20 @@ class VarlinkIdlTest {
                         () ->
                                 VarlinkIdl.parse(
                                         "interface a.B1\n\nmethod X(a: int) -> (b: Missing)\n"))
-                .as("a type used but never declared")
+                .as("a type used but never declared, at the line it is used")
+                .hasMessageStartingWith("Line 3:")
                 .hasMessageContaining("Missing");
         assertThatThrownBy(() -> VarlinkIdl.parse("interface a.B1\nmethod X(a: int) (b: int)\n"))
+                .as("a missing arrow")
                 .hasMessageStartingWith("Line 2:");
         assertThatThrownBy(
                         () ->
                                 VarlinkIdl.parse(
                                         "interface a.B1\nmethod X() -> ()\nmethod X() -> ()\n"))
+                .as("a method declared twice")
                 .hasMessageContaining("declared twice");
         assertThatThrownBy(() -> VarlinkIdl.parse("interface a.B1\ntype T (a: int, B)\n"))
+                .as("fields and values mixed")
                 .hasMessageContaining("mixed");
     }
 
@@ -112,7 +118,9 @@ class VarlinkIdlTest {
                 "interface a.B1\nmethod X(a: "
                         + "[]".repeat(VarlinkIdl.MAX_DEPTH + 1)
                         + "int) -> ()\n";
-        assertThatThrownBy(() -> VarlinkIdl.parse(deep)).hasMessageContaining("nested deeper");
+        assertThatThrownBy(() -> VarlinkIdl.parse(deep))
+                .as("arrays nested too deep")
+                .hasMessageContaining("nested deeper");
 
         String nested =
                 "interface a.B1\nmethod X(a: "
@@ -120,9 +128,58 @@ class VarlinkIdlTest {
                         + "int"
                         + ")".repeat(VarlinkIdl.MAX_DEPTH + 1)
                         + ") -> ()\n";
-        assertThatThrownBy(() -> VarlinkIdl.parse(nested)).hasMessageContaining("nested deeper");
+        assertThatThrownBy(() -> VarlinkIdl.parse(nested))
+                .as("structs nested too deep")
+                .hasMessageContaining("nested deeper");
+
+        String maybes = "interface a.B1\nmethod X(a: " + "?".repeat(20_000) + "int) -> ()\n";
+        assertThatThrownBy(() -> VarlinkIdl.parse(maybes))
+                .as("a run of ? is refused, not a stack overflow")
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("'??'");
 
         String longOne = "interface a.B1\n#" + "x".repeat(VarlinkIdl.MAX_LENGTH);
-        assertThatThrownBy(() -> VarlinkIdl.parse(longOne)).hasMessageContaining("more than");
+        assertThatThrownBy(() -> VarlinkIdl.parse(longOne))
+                .as("a description too long")
+                .hasMessageContaining("more than");
+    }
+
+    // Harm: an agent reading the interface's own comment as the words of its first method.
+    @Test
+    void aCommentBeforeTheInterfaceBelongsToNoDeclaration() {
+        VarlinkInterface parsed =
+                VarlinkIdl.parse("# The interface.\ninterface a.B1\nmethod X() -> ()\n");
+
+        assertThat(parsed.methods().getFirst().description())
+                .as("the first method has no comment of its own")
+                .isEmpty();
+    }
+
+    // Harm: an agent losing what each value of a declared enumeration means.
+    @Test
+    void aDeclaredEnumerationKeepsItsOwnAndItsValuesWords() {
+        VarlinkInterface parsed =
+                VarlinkIdl.parse(
+                        """
+                        interface a.B1
+
+                        # A colour.
+                        type Colour (
+                          # The red one.
+                          RED,
+                          GREEN
+                        )
+
+                        method X(c: Colour) -> ()
+                        """);
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> defs =
+                (java.util.Map<String, Object>)
+                        Tool.of(parsed).getFirst().inputSchema().get("$defs");
+
+        assertThat(((java.util.Map<?, ?>) defs.get("Colour")).get("description"))
+                .as("the type's comment, then each value's")
+                .isEqualTo("A colour.\nRED: The red one.");
     }
 }

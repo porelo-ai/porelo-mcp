@@ -54,6 +54,9 @@ images with the pinned GraalVM and `-march=x86-64`:
 - A number must travel exactly as it came: the JSON-RPC `id` back to the client, an `int` argument on to the daemon.
   `Json.parse` reads every number as a double and writes `2` back as `2.0`; `Json.parseDecimals`, from `porelo-wire`
   0.5.1 on, reads it as a `BigDecimal` and writes `2`. The layer reads with `parseDecimals`.
+- `porelo-wire`'s Varlink client still reads the daemon's replies with `Json.parse`, so 67108864 would leave as
+  `6.7108864E7`. Until it reads them exactly, a whole number up to 2^53 in a reply or a refusal is written
+  as the whole number it is; a larger one may already have lost digits on the way in.
 
 What would change the answer: a fault found in the HTTP reader that a bound does not settle; a need for request bodies
 in chunked encoding, for many sessions at once, or for server-to-client streams beyond what one process per task needs.

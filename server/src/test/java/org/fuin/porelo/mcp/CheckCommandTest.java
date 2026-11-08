@@ -47,7 +47,7 @@ class CheckCommandTest {
 
         Ran ran = run(Map.of(), "--check", "--daemon-socket", missing.toString());
 
-        assertThat(ran.code).isEqualTo(3);
+        assertThat(ran.code).as("not reached").isEqualTo(3);
         assertThat(ran.err)
                 .as("names what it asked and where")
                 .contains("GetInfo")
@@ -63,9 +63,9 @@ class CheckCommandTest {
                         directory, "interface org.fuin.porelo.Tasks1\nmethod Broken(", Map.of())) {
             Ran ran = run(Map.of(), "--check", "--daemon-socket", daemon.socket().toString());
 
-            assertThat(ran.code).isEqualTo(3);
-            assertThat(ran.err).contains("does not parse");
-            assertThat(ran.out).isEmpty();
+            assertThat(ran.code).as("not reached").isEqualTo(3);
+            assertThat(ran.err).as("says the description is broken").contains("does not parse");
+            assertThat(ran.out).as("nothing that reads as reached").isEmpty();
         }
     }
 
@@ -77,8 +77,8 @@ class CheckCommandTest {
 
         assertThat(unset.code).as("unset").isEqualTo(3);
         assertThat(empty.code).as("empty").isEqualTo(3);
-        assertThat(unset.err).contains("XDG_RUNTIME_DIR");
-        assertThat(empty.err).contains("XDG_RUNTIME_DIR");
+        assertThat(unset.err).as("names the variable when unset").contains("XDG_RUNTIME_DIR");
+        assertThat(empty.err).as("names the variable when empty").contains("XDG_RUNTIME_DIR");
     }
 
     // Harm: the check asking another socket than the daemon's own default.
@@ -94,7 +94,9 @@ class CheckCommandTest {
             assertThat(ran.code)
                     .as("reached at the default socket; errors: " + ran.err)
                     .isEqualTo(0);
-            assertThat(ran.out).contains(porelo.resolve("porelod.sock").toString());
+            assertThat(ran.out)
+                    .as("names the default socket")
+                    .contains(porelo.resolve("porelod.sock").toString());
         }
     }
 

@@ -43,7 +43,7 @@ class ServeCommandTest {
                 Path socket = mcpDirectory().resolve("t.sock");
                 Started started = start(socket, daemon.socket(), token);
 
-                assertThat(started.process.waitFor(20, TimeUnit.SECONDS)).isTrue();
+                assertThat(started.process.waitFor(20, TimeUnit.SECONDS)).as("it exits").isTrue();
                 assertThat(started.process.exitValue())
                         .as("token %s exits 2", token.length())
                         .isEqualTo(2);
@@ -71,9 +71,10 @@ class ServeCommandTest {
             started.process.destroy();
             started.process.waitFor(20, TimeUnit.SECONDS);
 
-            assertThat(commandLine).doesNotContain(TOKEN);
-            assertThat(environment).doesNotContain(TOKEN);
+            assertThat(commandLine).as("not in the command line").doesNotContain(TOKEN);
+            assertThat(environment).as("not in the environment").doesNotContain(TOKEN);
             assertThat(started.output() + started.errors())
+                    .as("not in any output, not even in part")
                     .doesNotContain(TOKEN)
                     .doesNotContain(TOKEN.substring(0, 16));
         }
@@ -86,10 +87,10 @@ class ServeCommandTest {
         Path socket = mcpDirectory().resolve("t.sock");
         Started started = start(socket, directory.resolve("no-daemon.sock"), TOKEN + "\n");
 
-        assertThat(started.process.waitFor(20, TimeUnit.SECONDS)).isTrue();
-        assertThat(started.process.exitValue()).isEqualTo(3);
-        assertThat(Files.exists(socket)).isFalse();
-        assertThat(started.output()).doesNotContain("ready");
+        assertThat(started.process.waitFor(20, TimeUnit.SECONDS)).as("it exits").isTrue();
+        assertThat(started.process.exitValue()).as("the daemon unreachable").isEqualTo(3);
+        assertThat(Files.exists(socket)).as("no socket bound").isFalse();
+        assertThat(started.output()).as("no ready").doesNotContain("ready");
         assertThat(started.errors()).as("names the socket it tried").contains("no-daemon.sock");
     }
 
@@ -101,16 +102,16 @@ class ServeCommandTest {
             Path socket = mcpDirectory().resolve("t.sock");
             Files.writeString(socket, "somebody's file");
             Started onAFile = start(socket, daemon.socket(), TOKEN + "\n");
-            assertThat(onAFile.process.waitFor(20, TimeUnit.SECONDS)).isTrue();
-            assertThat(onAFile.process.exitValue()).isEqualTo(2);
+            assertThat(onAFile.process.waitFor(20, TimeUnit.SECONDS)).as("it exits").isTrue();
+            assertThat(onAFile.process.exitValue()).as("refused on an existing path").isEqualTo(2);
             assertThat(Files.readString(socket)).as("left as it was").isEqualTo("somebody's file");
 
             Path open = Files.createDirectory(directory.resolve("open"));
             Files.setPosixFilePermissions(open, PosixFilePermissions.fromString("rwxr-xr-x"));
             Started inOpen = start(open.resolve("t.sock"), daemon.socket(), TOKEN + "\n");
-            assertThat(inOpen.process.waitFor(20, TimeUnit.SECONDS)).isTrue();
+            assertThat(inOpen.process.waitFor(20, TimeUnit.SECONDS)).as("it exits").isTrue();
             assertThat(inOpen.process.exitValue()).as("a directory of mode 0755").isEqualTo(2);
-            assertThat(inOpen.errors()).contains("rwxr-xr-x");
+            assertThat(inOpen.errors()).as("names the mode it found").contains("rwxr-xr-x");
         }
     }
 
@@ -138,7 +139,7 @@ class ServeCommandTest {
             started.process.destroy();
 
             assertThat(tcp).as("no socket of the process is a TCP socket").isEmpty();
-            assertThat(started.process.waitFor(20, TimeUnit.SECONDS)).isTrue();
+            assertThat(started.process.waitFor(20, TimeUnit.SECONDS)).as("it exits").isTrue();
             assertThat(started.process.exitValue()).as("stopped on SIGTERM").isEqualTo(0);
             assertThat(Files.exists(socket)).as("its own socket removed").isFalse();
         }

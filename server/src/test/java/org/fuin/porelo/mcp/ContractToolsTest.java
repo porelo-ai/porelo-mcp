@@ -66,11 +66,15 @@ class ContractToolsTest {
                     .anySatisfy(
                             tool -> {
                                 Map<?, ?> each = (Map<?, ?>) tool;
-                                assertThat(each.get("name")).isEqualTo("HelloFromTheFuture");
+                                assertThat(each.get("name"))
+                                        .as("the new method's name")
+                                        .isEqualTo("HelloFromTheFuture");
                                 assertThat(each.get("description"))
+                                        .as("its comment")
                                         .isEqualTo(
                                                 "Says hello, in a version of the contract this code has never seen.");
                                 assertThat(Json.write(each.get("inputSchema")))
+                                        .as("its parameter")
                                         .contains("\"name\":{\"type\":\"string\"}");
                             });
             assertThat(tools)

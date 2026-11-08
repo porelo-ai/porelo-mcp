@@ -23,6 +23,12 @@ public record Tool(
         Map<String, Object> inputSchema,
         Map<String, Object> outputSchema) {
 
+    /** Copies the schemas, so a tool cannot change once listed. */
+    public Tool {
+        inputSchema = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(inputSchema));
+        outputSchema = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(outputSchema));
+    }
+
     /**
      * Every method of an interface as a tool, in the order declared.
      *
@@ -67,6 +73,7 @@ public record Tool(
         private final VarlinkInterface described;
         private final boolean input;
         private final Set<String> reached = new LinkedHashSet<>();
+        private final List<String> order = new ArrayList<>();
 
         Schema(VarlinkInterface described, boolean input) {
             this.described = described;
@@ -77,15 +84,19 @@ public record Tool(
             final Map<String, Object> root = new LinkedHashMap<>(of(struct));
             final Map<String, Object> defs = new LinkedHashMap<>();
             // Each definition may reach further names, so they are written until none is new.
-            for (int done = 0; done < reached.size(); done++) {
-                final String name = reached.stream().skip(done).findFirst().orElseThrow();
+            for (int done = 0; done < order.size(); done++) {
+                final String name = order.get(done);
                 final VarlinkInterface.Declared declared = described.types().get(name);
                 if (declared == null) {
                     throw new IllegalStateException("The type '" + name + "' is not declared");
                 }
                 final Map<String, Object> def = new LinkedHashMap<>(of(declared.type()));
                 if (!declared.description().isEmpty()) {
-                    def.put("description", declared.description());
+                    // A declared enumeration's values keep their words after the type's.
+                    def.merge(
+                            "description",
+                            declared.description(),
+                            (values, own) -> own + "\n" + values);
                 }
                 defs.put(name, def);
             }
@@ -106,7 +117,9 @@ public record Tool(
                             case OBJECT -> Map.of("type", "object");
                         };
                 case VarlinkType.Named named -> {
-                    reached.add(named.name());
+                    if (reached.add(named.name())) {
+                        order.add(named.name());
+                    }
                     yield Map.of("$ref", "#/$defs/" + named.name());
                 }
                 // Absent is the only thing a ?type adds, and leaving it out of 'required' says

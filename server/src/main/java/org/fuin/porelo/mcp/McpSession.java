@@ -35,6 +35,9 @@ public final class McpSession {
     /** JSON-RPC's code for a fault on this side: here, a daemon that could not be reached. */
     static final int INTERNAL_ERROR = -32603;
 
+    /** 2^53: up to here every whole number is exactly a double. */
+    private static final double EXACT_IN_A_DOUBLE = 9_007_199_254_740_992d;
+
     private final Map<String, Tool> tools = new LinkedHashMap<>();
     private final Daemon daemon;
     private final String version;
@@ -72,17 +75,25 @@ public final class McpSession {
         if (!(parsed instanceof Map<?, ?> request)) {
             return error(null, INVALID_REQUEST, "A message must be one JSON object");
         }
-        final Object id = request.get("id");
+        // Only a string or a number is an id to answer with; anything else is answered with null.
+        final Object given = request.get("id");
+        final @Nullable Object id =
+                given instanceof String || given instanceof Number ? given : null;
         if (!(request.get("method") instanceof String method)) {
             // A response to something this server asked; it asks nothing, so it is dropped.
             return request.containsKey("result") || request.containsKey("error")
                     ? null
                     : error(id, INVALID_REQUEST, "The message names no method");
         }
+        if (!"2.0".equals(request.get("jsonrpc"))) {
+            return request.containsKey("id")
+                    ? error(id, INVALID_REQUEST, "jsonrpc must be \"2.0\"")
+                    : null;
+        }
         if (!request.containsKey("id")) {
             return null;
         }
-        if (!(id instanceof String || id instanceof Number)) {
+        if (id == null) {
             return error(null, INVALID_REQUEST, "The id must be a string or a number");
         }
         final Object params = request.get("params");
@@ -144,10 +155,35 @@ public final class McpSession {
             final Map<String, Object> refused = new LinkedHashMap<>();
             refused.put("error", refusal);
             final Map<String, Object> refusedWith = ex.getParameters();
-            refused.put("parameters", refusedWith == null ? Map.of() : refusedWith);
+            refused.put("parameters", refusedWith == null ? Map.of() : exact(refusedWith));
             return result(id, toolResult(refused, true));
         }
-        return result(id, toolResult(reply, false));
+        return result(id, toolResult(exact(reply), false));
+    }
+
+    /**
+     * The daemon's numbers written as it wrote them. porelo-wire's client reads each one as a
+     * {@code double}, which writes 2 as {@code 2.0} and 67108864 as {@code 6.7108864E7}; a whole
+     * one within a double's exact range is the same number as a {@code long}, and is written so.
+     */
+    @SuppressWarnings("unchecked")
+    static <T> T exact(T value) {
+        return (T)
+                switch (value) {
+                    case Double number
+                            when number == Math.rint(number)
+                                    && Math.abs(number) <= EXACT_IN_A_DOUBLE ->
+                            number.longValue();
+                    case Map<?, ?> map -> {
+                        final Map<Object, Object> copy = new LinkedHashMap<>();
+                        map.forEach(
+                                (key, each) -> copy.put(key, each == null ? null : exact(each)));
+                        yield copy;
+                    }
+                    case List<?> list ->
+                            list.stream().map(each -> each == null ? null : exact(each)).toList();
+                    default -> value;
+                };
     }
 
     private static Map<String, Object> toolResult(Map<String, Object> content, boolean isError) {

@@ -144,7 +144,7 @@ class McpHttpServerTest {
                 .contains("\"id\":1")
                 .doesNotContain("\"id\":2");
         assertThat(answer.split("HTTP/1.1 ", -1)).as("one status line").hasSize(2);
-        assertThat(answer).contains("Connection: close");
+        assertThat(answer).as("the server says it closes").contains("Connection: close");
     }
 
     // Harm: a framing two readers could take differently, which is how a request is smuggled.
@@ -239,6 +239,7 @@ class McpHttpServerTest {
     @Test
     void theSocketHasModeSixHundred() throws Exception {
         assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(socket)))
+                .as("only the owner may open it")
                 .isEqualTo("rw-------");
     }
 

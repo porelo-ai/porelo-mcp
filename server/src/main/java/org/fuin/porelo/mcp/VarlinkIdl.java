@@ -24,6 +24,10 @@ public final class VarlinkIdl {
     private int position;
     private int line = 1;
     private int depth;
+
+    /** Each type name used, with the line it is first used on. */
+    private final Map<String, Integer> used = new LinkedHashMap<>();
+
     private final StringBuilder comment = new StringBuilder();
 
     private VarlinkIdl(String text) {
@@ -50,6 +54,8 @@ public final class VarlinkIdl {
 
     private VarlinkInterface interfaceDescription() {
         expectWord("interface");
+        // A comment above 'interface' is the interface's, never its first declaration's.
+        takeComment();
         final String name = name();
         final Map<String, VarlinkInterface.Declared> types = new LinkedHashMap<>();
         final List<VarlinkInterface.Method> methods = new ArrayList<>();
@@ -96,15 +102,15 @@ public final class VarlinkIdl {
                                 "Expected 'type', 'method' or 'error', found '" + keyword + "'");
             }
         }
-        for (final VarlinkInterface.Declared declared : types.values()) {
-            checkNames(declared.type(), types);
-        }
-        for (final VarlinkInterface.Method method : methods) {
-            checkNames(method.input(), types);
-            checkNames(method.output(), types);
-        }
-        for (final VarlinkInterface.ErrorType declared : errors) {
-            checkNames(declared.parameters(), types);
+        for (final Map.Entry<String, Integer> named : used.entrySet()) {
+            if (!types.containsKey(named.getKey())) {
+                throw new IllegalArgumentException(
+                        "Line "
+                                + named.getValue()
+                                + ": the type '"
+                                + named.getKey()
+                                + "' is used but never declared");
+            }
         }
         return new VarlinkInterface(name, types, methods, errors);
     }
@@ -114,27 +120,6 @@ public final class VarlinkIdl {
             throw new IllegalArgumentException("Line " + at + ": '" + name + "' is declared twice");
         }
         return name;
-    }
-
-    private static void checkNames(VarlinkType type, Map<String, VarlinkInterface.Declared> types) {
-        switch (type) {
-            case VarlinkType.Named named -> {
-                if (!types.containsKey(named.name())) {
-                    throw new IllegalArgumentException(
-                            "The type '" + named.name() + "' is used but never declared");
-                }
-            }
-            case VarlinkType.Maybe maybe -> checkNames(maybe.inner(), types);
-            case VarlinkType.Array array -> checkNames(array.element(), types);
-            case VarlinkType.Dict dict -> checkNames(dict.value(), types);
-            case VarlinkType.Struct struct -> {
-                for (final VarlinkType.Field field : struct.fields()) {
-                    checkNames(field.type(), types);
-                }
-            }
-            case VarlinkType.Enum ignored -> {}
-            case VarlinkType.Builtin ignored -> {}
-        }
     }
 
     private VarlinkType.Struct struct() {
@@ -208,11 +193,12 @@ public final class VarlinkIdl {
         final char first = peek();
         if (first == '?') {
             position++;
-            final VarlinkType inner = type();
-            if (inner instanceof VarlinkType.Maybe) {
+            skipSpace();
+            // Refused before recursing, so a run of them cannot exhaust the stack.
+            if (peek() == '?') {
                 throw error("'??' is not a type");
             }
-            return new VarlinkType.Maybe(inner);
+            return new VarlinkType.Maybe(type());
         }
         if (first == '[') {
             position++;
@@ -232,6 +218,7 @@ public final class VarlinkIdl {
         if (first == '(') {
             return parenthesized();
         }
+        final int at = line;
         final String word = name();
         return switch (word) {
             case "bool" -> VarlinkType.Builtin.BOOL;
@@ -239,7 +226,10 @@ public final class VarlinkIdl {
             case "float" -> VarlinkType.Builtin.FLOAT;
             case "string" -> VarlinkType.Builtin.STRING;
             case "object" -> VarlinkType.Builtin.OBJECT;
-            default -> new VarlinkType.Named(word);
+            default -> {
+                used.putIfAbsent(word, at);
+                yield new VarlinkType.Named(word);
+            }
         };
     }
 

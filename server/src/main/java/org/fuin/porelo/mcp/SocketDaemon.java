@@ -30,11 +30,43 @@ public final class SocketDaemon implements Daemon {
 
     @Override
     public Map<String, Object> call(String method, Map<String, Object> parameters) {
-        try (VarlinkClient client = new VarlinkClient(socket)) {
-            return client.call(method, parameters);
+        final VarlinkClient client;
+        try {
+            client = new VarlinkClient(socket);
+        } catch (VarlinkException ex) {
+            throw broken(ex);
+        }
+        final Map<String, Object> reply;
+        try {
+            reply = client.call(method, parameters);
+        } catch (VarlinkException ex) {
+            closeQuietly(client);
+            throw ex.getErrorName() == null ? broken(ex) : ex;
+        } catch (RuntimeException ex) {
+            // A frame that is no JSON, from a daemon that broke mid-answer.
+            closeQuietly(client);
+            throw broken(ex);
+        }
+        // The reply has arrived; failing to close the connection afterwards cannot take it back.
+        closeQuietly(client);
+        return reply;
+    }
+
+    /** A connection that broke, as a failure without an error name that names the socket. */
+    private VarlinkException broken(RuntimeException cause) {
+        final String message = String.valueOf(cause.getMessage());
+        return new VarlinkException(
+                message.contains(socket.toString())
+                        ? message
+                        : "The daemon at " + socket + ": " + message,
+                cause);
+    }
+
+    private static void closeQuietly(VarlinkClient client) {
+        try {
+            client.close();
         } catch (IOException ex) {
-            // Closing a connection whose reply already arrived cannot lose that reply.
-            throw new VarlinkException("Closing the connection to " + socket + " failed", ex);
+            // Nothing is left to read from it.
         }
     }
 
