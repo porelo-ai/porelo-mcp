@@ -53,9 +53,6 @@ public final class McpSession {
     /** JSON-RPC's code for a fault on this side: here, a daemon that could not be reached. */
     static final int INTERNAL_ERROR = -32603;
 
-    /** 2^53: up to here every whole number is exactly a double. */
-    private static final double EXACT_IN_A_DOUBLE = 9_007_199_254_740_992d;
-
     private final Map<String, Tool> tools = new LinkedHashMap<>();
     private final Daemon daemon;
     private final String version;
@@ -290,7 +287,7 @@ public final class McpSession {
         } catch (VarlinkException ex) {
             return failed(id, ex, modern);
         }
-        return result(id, toolResult(exact(reply), false, modern));
+        return result(id, toolResult(reply, false, modern));
     }
 
     /** A streamed call: each reply as progress, the last one also the answer. */
@@ -309,15 +306,12 @@ public final class McpSession {
                     daemon.stream(
                             tool.method(),
                             given,
-                            reply ->
-                                    streams.send(
-                                            cancellation,
-                                            progress(token, ++count[0], exact(reply))),
+                            reply -> streams.send(cancellation, progress(token, ++count[0], reply)),
                             cancellation);
         } catch (VarlinkException ex) {
             return failed(id, ex, modern);
         }
-        return result(id, toolResult(exact(last), false, modern));
+        return result(id, toolResult(last, false, modern));
     }
 
     /** A daemon's refusal as the tool's error, or a broken connection as a protocol error. */
@@ -329,7 +323,7 @@ public final class McpSession {
         final Map<String, Object> refused = new LinkedHashMap<>();
         refused.put("error", refusal);
         final Map<String, Object> refusedWith = ex.getParameters();
-        refused.put("parameters", refusedWith == null ? Map.of() : exact(refusedWith));
+        refused.put("parameters", refusedWith == null ? Map.of() : refusedWith);
         return result(id, toolResult(refused, true, modern));
     }
 
@@ -343,31 +337,6 @@ public final class McpSession {
         notification.put("method", "notifications/progress");
         notification.put("params", parameters);
         return Json.write(notification);
-    }
-
-    /**
-     * The daemon's numbers written as it wrote them. porelo-wire's client reads each one as a
-     * {@code double}, which writes 2 as {@code 2.0} and 67108864 as {@code 6.7108864E7}; a whole
-     * one within a double's exact range is the same number as a {@code long}, and is written so.
-     */
-    @SuppressWarnings("unchecked")
-    static <T> T exact(T value) {
-        return (T)
-                switch (value) {
-                    case Double number
-                            when number == Math.rint(number)
-                                    && Math.abs(number) <= EXACT_IN_A_DOUBLE ->
-                            number.longValue();
-                    case Map<?, ?> map -> {
-                        final Map<Object, Object> copy = new LinkedHashMap<>();
-                        map.forEach(
-                                (key, each) -> copy.put(key, each == null ? null : exact(each)));
-                        yield copy;
-                    }
-                    case List<?> list ->
-                            list.stream().map(each -> each == null ? null : exact(each)).toList();
-                    default -> value;
-                };
     }
 
     private Map<String, Object> toolResult(

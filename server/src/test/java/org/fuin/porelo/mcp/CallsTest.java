@@ -154,17 +154,28 @@ class CallsTest {
                 .isNull();
     }
 
-    // Harm: a whole number the daemon sent reaching the agent changed, as 2.0 or 6.7108864E7.
+    // Harm: a whole number the daemon sent reaching the agent changed, as 2.0 or 6.7108864E7, or
+    // beyond 2^53 with other digits.
     @Test
     void wholeNumbersOfAReplyAndARefusalReachTheAgentWrittenAsTheDaemonWroteThem()
             throws Exception {
         VarlinkServer.Method reply =
                 (parameters, replies) ->
-                        replies.last(Map.of("count", 2L, "limit", 67108864L, "ratio", 0.5));
+                        replies.last(
+                                Map.of(
+                                        "count",
+                                        2L,
+                                        "limit",
+                                        67108864L,
+                                        "ratio",
+                                        0.5,
+                                        "bytes",
+                                        9007199254740993L));
         VarlinkServer.Method refuse =
                 (parameters, replies) -> {
                     throw new VarlinkException(
-                            "org.fuin.porelo.Tasks1.TooLarge", Map.of("limit", 67108864L));
+                            "org.fuin.porelo.Tasks1.TooLarge",
+                            Map.of("limit", 67108864L, "bytes", 9007199254740993L));
                 };
         try (var daemon = standIn(Map.of("List", reply, "Stop", refuse))) {
             McpSession session = session(daemon);
@@ -177,11 +188,13 @@ class CallsTest {
                     .contains("\"count\":2")
                     .contains("\"limit\":67108864")
                     .contains("\"ratio\":0.5")
+                    .contains("\"bytes\":9007199254740993")
                     .doesNotContain("\"count\":2.0")
                     .doesNotContain("E7");
             assertThat(refused)
                     .as("a refusal's parameter as written")
                     .contains("\"limit\":67108864")
+                    .contains("\"bytes\":9007199254740993")
                     .doesNotContain("E7");
         }
     }
