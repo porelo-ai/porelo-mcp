@@ -18,12 +18,7 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="mc07"></a>[MC07](MC07-Streams-As-MCP-Progress.md) | M | - | A method that answers only as a stream callable as a tool, its replies as MCP progress. |
-
-## Accepted
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="mc08"></a>[MC08](MC08-MCP-2026-07-28-Spoken.md) | - | - | A client that offers only MCP `2026-07-28` reaches the tools, over stdio and HTTP. |
+| <a id="mc08"></a>[MC08](MC08-MCP-2026-07-28-Spoken.md) | M | - | A client that offers only MCP `2026-07-28` reaches the tools, over stdio and HTTP. |
 
 ## Finished
 
