@@ -1,6 +1,6 @@
 # MC05 — Whether It Reaches The Daemon
 
-**Status:** Implementing
+**Status:** Review
 **Size:** S - one command reading two Varlink methods.
 
 **What must be true.** `porelo-mcp --check` tells a person or the daemon whether `porelo-mcp` reaches the daemon, with

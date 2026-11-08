@@ -45,7 +45,7 @@ public final class Main {
      * @param args The arguments.
      */
     public static void main(String[] args) {
-        System.exit(run(args, System.in, System.out, System.err));
+        System.exit(run(args, System.in, System.out, System.err, System.getenv()));
     }
 
     /**
@@ -55,12 +55,22 @@ public final class Main {
      * @param in Standard input, where the token comes from.
      * @param out Standard output, where {@code ready} goes.
      * @param err Standard error, for every other word.
+     * @param environment The environment, where the daemon's default socket comes from.
      * @return The exit code.
      */
-    static int run(String[] args, InputStream in, PrintStream out, PrintStream err) {
+    static int run(
+            String[] args,
+            InputStream in,
+            PrintStream out,
+            PrintStream err,
+            Map<String, String> environment) {
+        if (args.length > 0 && args[0].equals("--check")) {
+            return check(List.of(args).subList(1, args.length), out, err, environment);
+        }
         if (args.length == 0 || !args[0].equals("serve")) {
             err.println(
                     "porelo-mcp: usage: porelo-mcp serve --task <name> --socket <path> --daemon-socket <path>");
+            err.println("       porelo-mcp --check [--daemon-socket <path>]");
             return REFUSED;
         }
         final Map<String, String> options;
@@ -144,6 +154,73 @@ public final class Main {
             return FAILED;
         }
         return stopped.get() ? STOPPED : FAILED;
+    }
+
+    /**
+     * Says whether the daemon is reached: its version, then each method offered as a tool, one per
+     * line.
+     */
+    static int check(
+            List<String> args, PrintStream out, PrintStream err, Map<String, String> environment) {
+        final Path socket;
+        if (args.isEmpty()) {
+            final String runtime = environment.get("XDG_RUNTIME_DIR");
+            if (runtime == null || runtime.isEmpty()) {
+                err.println(
+                        "porelo-mcp: XDG_RUNTIME_DIR is unset or empty, so the daemon's socket is unknown;"
+                                + " name it with --daemon-socket");
+                return NO_DAEMON;
+            }
+            socket = Path.of(runtime, "porelo", "porelod.sock");
+        } else {
+            try {
+                socket =
+                        Path.of(
+                                java.util.Objects.requireNonNull(
+                                        options(args, Set.of("--daemon-socket"))
+                                                .get("--daemon-socket")));
+            } catch (StartRefused ex) {
+                err.println("porelo-mcp: " + ex.getMessage());
+                return REFUSED;
+            }
+        }
+        final SocketDaemon daemon = new SocketDaemon(socket);
+        final Object version;
+        try {
+            version = daemon.call("org.varlink.service.GetInfo", Map.of()).get("version");
+        } catch (VarlinkException ex) {
+            err.println(
+                    "porelo-mcp: GetInfo on " + socket + " was not answered: " + ex.getMessage());
+            return NO_DAEMON;
+        }
+        final List<Tool> tools;
+        try {
+            tools = Tool.of(VarlinkIdl.parse(daemon.describe(INTERFACE)));
+        } catch (VarlinkException ex) {
+            err.println(
+                    "porelo-mcp: GetInterfaceDescription of "
+                            + INTERFACE
+                            + " on "
+                            + socket
+                            + " was not answered: "
+                            + ex.getMessage());
+            return NO_DAEMON;
+        } catch (IllegalArgumentException ex) {
+            err.println(
+                    "porelo-mcp: the description of "
+                            + INTERFACE
+                            + " on "
+                            + socket
+                            + " does not parse: "
+                            + ex.getMessage());
+            return NO_DAEMON;
+        }
+        out.println("porelo-mcp reaches porelod " + version + " at " + socket);
+        for (final Tool tool : tools) {
+            out.println(tool.name());
+        }
+        out.flush();
+        return STOPPED;
     }
 
     /** Reads {@code --name value} pairs, each of the given names exactly once. */
