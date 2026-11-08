@@ -100,5 +100,6 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 - `porelo-mcp --check [--daemon-socket <path>]` says whether it reaches the daemon, with the version from
   `org.varlink.service.GetInfo` and the methods it is offered.
 - The daemon socket is by default `$XDG_RUNTIME_DIR/porelo/porelod.sock`.
-- It exits 0 when it reached the daemon. It exits 3, naming what it tried, when it did not, or when `XDG_RUNTIME_DIR` is
-  unset or empty and no socket was given.
+- It exits 0 when it reached the daemon: `GetInfo` named a version and `GetInterfaceDescription` described
+  `org.fuin.porelo.Tasks1`. It exits 3, naming what it tried, when it did not, or when `XDG_RUNTIME_DIR` is unset or
+  empty and no socket was given. It exits 2 for a wrong argument.

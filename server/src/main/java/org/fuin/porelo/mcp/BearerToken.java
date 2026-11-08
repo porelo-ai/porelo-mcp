@@ -40,6 +40,15 @@ public final class BearerToken {
      */
     public static BearerToken read(InputStream in) throws StartRefused, IOException {
         final byte[] line = new byte[MAX_READ];
+        try {
+            return new BearerToken(sha256(line, readLine(in, line)));
+        } finally {
+            // Whatever was read, accepted or not, does not stay in memory.
+            java.util.Arrays.fill(line, (byte) 0);
+        }
+    }
+
+    private static int readLine(InputStream in, byte[] line) throws StartRefused, IOException {
         int length = 0;
         while (true) {
             final int next = in.read();
@@ -60,11 +69,7 @@ public final class BearerToken {
         if (length < MIN_LENGTH) {
             throw new StartRefused("The token is shorter than " + MIN_LENGTH + " bytes");
         }
-        final byte[] token = java.util.Arrays.copyOf(line, length);
-        java.util.Arrays.fill(line, (byte) 0);
-        final BearerToken read = new BearerToken(sha256(token));
-        java.util.Arrays.fill(token, (byte) 0);
-        return read;
+        return length;
     }
 
     /**
@@ -77,9 +82,13 @@ public final class BearerToken {
         if (authorization == null || !authorization.startsWith(SCHEME)) {
             return false;
         }
-        return MessageDigest.isEqual(
-                digest,
-                sha256(authorization.substring(SCHEME.length()).getBytes(StandardCharsets.UTF_8)));
+        final byte[] presented =
+                authorization.substring(SCHEME.length()).getBytes(StandardCharsets.UTF_8);
+        try {
+            return MessageDigest.isEqual(digest, sha256(presented, presented.length));
+        } finally {
+            java.util.Arrays.fill(presented, (byte) 0);
+        }
     }
 
     @Override
@@ -87,9 +96,11 @@ public final class BearerToken {
         return "BearerToken[not shown]";
     }
 
-    private static byte[] sha256(byte[] bytes) {
+    private static byte[] sha256(byte[] bytes, int length) {
         try {
-            return MessageDigest.getInstance("SHA-256").digest(bytes);
+            final MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+            sha256.update(bytes, 0, length);
+            return sha256.digest();
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("Every JDK has SHA-256", ex);
         }

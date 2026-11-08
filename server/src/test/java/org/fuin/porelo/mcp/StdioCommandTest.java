@@ -169,6 +169,56 @@ class StdioCommandTest {
         }
     }
 
+    // Harm: one overlong message holding memory without bound, or ending the session for good.
+    @Test
+    void aMessageOverItsBoundIsRefusedAndTheNextOneIsAnswered() throws Exception {
+        try (var daemon = standIn(sets(List.of("List"), List.of(), List.of(), List.of()))) {
+            String tooLong =
+                    "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"x\":\""
+                            + "a".repeat(StdioLines.MAX_LINE)
+                            + "\"}";
+
+            Ran ran = run(daemon, tooLong, request(2, "ping", Map.of()));
+
+            assertThat(ran.answers).as("two answers: %s", ran.err).hasSize(2);
+            assertThat(((Map<?, ?>) ran.answers.get(0).get("error")).get("code"))
+                    .as("the overlong one refused")
+                    .isEqualTo(new java.math.BigDecimal(-32600));
+            assertThat(ran.answers.get(1).get("result"))
+                    .as("the next one answered")
+                    .isEqualTo(Map.of());
+        }
+    }
+
+    // Harm: a daemon answering broken sets and every tool being offered for it.
+    @Test
+    void aSetThatIsMissingOrHoldsSomethingButNamesOffersNoTools() throws Exception {
+        List<Map<String, Object>> broken =
+                List.of(
+                        Map.of("reading", List.of("List")),
+                        Map.of(
+                                "reading",
+                                List.of("List", 42),
+                                "writing",
+                                List.of(),
+                                "never",
+                                List.of(),
+                                "judgement",
+                                List.of()));
+        for (Map<String, Object> each : broken) {
+            Path place = java.nio.file.Files.createTempDirectory(directory, "broken");
+            Map<String, VarlinkServer.Method> methods =
+                    Map.of("McpMethods", (parameters, replies) -> replies.last(each));
+            try (var daemon =
+                    new StandInDaemon(place, StandInDaemon.tasks1() + MCP_METHODS, methods)) {
+                Ran ran = run(daemon, request(1, "tools/list", Map.of()));
+
+                assertThat(toolNames(ran.answers.get(0))).as("no tools for %s", each).isEmpty();
+                assertThat(ran.err).as("says why").contains("no tools offered");
+            }
+        }
+    }
+
     static Map<String, Object> sets(
             List<String> reading,
             List<String> writing,

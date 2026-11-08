@@ -88,10 +88,15 @@ public final class Main {
             return REFUSED;
         }
         final String task = java.util.Objects.requireNonNull(options.get("--task"));
-        final Path socket = Path.of(java.util.Objects.requireNonNull(options.get("--socket")));
-        final SocketDaemon daemon =
-                new SocketDaemon(
-                        Path.of(java.util.Objects.requireNonNull(options.get("--daemon-socket"))));
+        final Path socket;
+        final SocketDaemon daemon;
+        try {
+            socket = path("--socket", options.get("--socket"));
+            daemon = new SocketDaemon(path("--daemon-socket", options.get("--daemon-socket")));
+        } catch (StartRefused ex) {
+            err.println("porelo-mcp: " + task + ": " + ex.getMessage());
+            return REFUSED;
+        }
         final BearerToken token;
         try {
             token = BearerToken.read(in);
@@ -106,7 +111,7 @@ public final class Main {
         }
         final List<Tool> tools;
         try {
-            tools = Tool.of(VarlinkIdl.parse(daemon.describe(INTERFACE)));
+            tools = toolsOf(daemon.describe(INTERFACE));
         } catch (VarlinkException | IllegalArgumentException ex) {
             err.println(
                     "porelo-mcp: "
@@ -117,6 +122,21 @@ public final class Main {
                             + ex.getMessage());
             return NO_DAEMON;
         }
+        // Handled from here on, so a stop while binding still removes the path and exits 0.
+        final java.util.concurrent.atomic.AtomicBoolean stopped =
+                new java.util.concurrent.atomic.AtomicBoolean();
+        final java.util.concurrent.atomic.AtomicReference<@Nullable McpHttpServer> bound =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        final Runnable stop =
+                () -> {
+                    stopped.set(true);
+                    final McpHttpServer running = bound.get();
+                    if (running != null) {
+                        running.close();
+                    }
+                };
+        sun.misc.Signal.handle(new sun.misc.Signal("TERM"), signal -> stop.run());
+        sun.misc.Signal.handle(new sun.misc.Signal("INT"), signal -> stop.run());
         final McpHttpServer server;
         try {
             server =
@@ -139,23 +159,22 @@ public final class Main {
                             + ex.getMessage());
             return REFUSED;
         }
-        final java.util.concurrent.atomic.AtomicBoolean stopped =
-                new java.util.concurrent.atomic.AtomicBoolean();
-        final Runnable stop =
-                () -> {
-                    stopped.set(true);
-                    server.close();
-                };
-        sun.misc.Signal.handle(new sun.misc.Signal("TERM"), signal -> stop.run());
-        sun.misc.Signal.handle(new sun.misc.Signal("INT"), signal -> stop.run());
+        bound.set(server);
+        if (stopped.get()) {
+            // Stopped while binding: no ready, and the path is removed.
+            server.close();
+            return STOPPED;
+        }
         out.println("ready");
         out.flush();
         try {
             server.serve();
         } catch (IOException ex) {
             err.println("porelo-mcp: " + task + ": serving failed: " + ex.getMessage());
-            server.close();
             return FAILED;
+        } finally {
+            // On this thread too, so the process cannot exit before the path is gone.
+            server.close();
         }
         return stopped.get() ? STOPPED : FAILED;
     }
@@ -177,6 +196,10 @@ public final class Main {
         final Object version;
         try {
             version = daemon.call("org.varlink.service.GetInfo", Map.of()).get("version");
+            if (!(version instanceof String named) || named.isBlank()) {
+                err.println("porelo-mcp: GetInfo on " + socket + " named no version");
+                return NO_DAEMON;
+            }
         } catch (VarlinkException ex) {
             err.println(
                     "porelo-mcp: GetInfo on " + socket + " was not answered: " + ex.getMessage());
@@ -184,7 +207,7 @@ public final class Main {
         }
         final List<Tool> tools;
         try {
-            tools = Tool.of(VarlinkIdl.parse(daemon.describe(INTERFACE)));
+            tools = toolsOf(daemon.describe(INTERFACE));
         } catch (VarlinkException ex) {
             err.println(
                     "porelo-mcp: GetInterfaceDescription of "
@@ -233,7 +256,7 @@ public final class Main {
         final SocketDaemon daemon = new SocketDaemon(socket);
         final List<Tool> tools;
         try {
-            tools = Tool.of(VarlinkIdl.parse(daemon.describe(INTERFACE)));
+            tools = toolsOf(daemon.describe(INTERFACE));
         } catch (VarlinkException | IllegalArgumentException ex) {
             err.println(
                     "porelo-mcp: the daemon at "
@@ -296,9 +319,9 @@ public final class Main {
     static Path personsSocket(List<String> args, Map<String, String> environment)
             throws StartRefused {
         if (!args.isEmpty()) {
-            return Path.of(
-                    java.util.Objects.requireNonNull(
-                            options(args, Set.of("--daemon-socket")).get("--daemon-socket")));
+            return path(
+                    "--daemon-socket",
+                    options(args, Set.of("--daemon-socket")).get("--daemon-socket"));
         }
         final String runtime = environment.get("XDG_RUNTIME_DIR");
         if (runtime == null || runtime.isEmpty()) {
@@ -306,7 +329,33 @@ public final class Main {
                     "XDG_RUNTIME_DIR is unset or empty, so the daemon's socket is unknown;"
                             + " name it with --daemon-socket");
         }
-        return Path.of(runtime, "porelo", "porelod.sock");
+        try {
+            return Path.of(runtime, "porelo", "porelod.sock");
+        } catch (java.nio.file.InvalidPathException ex) {
+            throw new NoDaemonSocket("XDG_RUNTIME_DIR is no usable path: " + ex.getMessage());
+        }
+    }
+
+    /** An option's value as a path, refused when it is none. */
+    static Path path(String option, @Nullable String value) throws StartRefused {
+        try {
+            return Path.of(java.util.Objects.requireNonNull(value));
+        } catch (java.nio.file.InvalidPathException ex) {
+            throw new StartRefused(option + " is no usable path: " + ex.getReason());
+        }
+    }
+
+    /**
+     * The tools of a description, which must be of {@value #INTERFACE}: another interface's methods
+     * are not the daemon's tools, whatever they are called.
+     */
+    static List<Tool> toolsOf(String description) {
+        final VarlinkInterface described = VarlinkIdl.parse(description);
+        if (!described.name().equals(INTERFACE)) {
+            throw new IllegalArgumentException(
+                    "it describes " + described.name() + ", not " + INTERFACE);
+        }
+        return Tool.of(described);
     }
 
     /** Reads {@code --name value} pairs, each of the given names exactly once. */

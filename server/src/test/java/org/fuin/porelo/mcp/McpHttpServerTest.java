@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterEach;
@@ -175,6 +176,17 @@ class McpHttpServerTest {
                 "POST /mcp HTTP/1.1\r\n" + auth + "Content-Length : 2\r\n\r\n{}");
         refused.put(
                 "a short body", "POST /mcp HTTP/1.1\r\n" + auth + "Content-Length: 50\r\n\r\n{}");
+        refused.put(
+                "a control byte around a value",
+                "POST /mcp HTTP/1.1\r\n" + auth + "Content-Length: \u000b2\r\n\r\n{}");
+        refused.put(
+                "a control byte inside a value",
+                "POST /mcp HTTP/1.1\r\n" + auth + "X-A: a\u0001b\r\nContent-Length: 2\r\n\r\n{}");
+        refused.put(
+                "two Hosts",
+                "POST /mcp HTTP/1.1\r\nHost: a\r\nHost: b\r\n"
+                        + auth
+                        + "Content-Length: 2\r\n\r\n{}");
 
         for (Map.Entry<String, String> each : refused.entrySet()) {
             assertThat(status(exchange(each.getValue(), true))).as(each.getKey()).isEqualTo(400);
@@ -273,6 +285,158 @@ class McpHttpServerTest {
         assertThat(status(exchange(current))).as("a version it speaks is served").isEqualTo(200);
     }
 
+    // Harm: every answered connection held until its deadline by a client that keeps its end open.
+    @Test
+    @org.junit.jupiter.api.Timeout(15)
+    void anAnsweredConnectionIsLetGoRightAfterItsAnswerWhileTheClientStillHoldsIt()
+            throws Exception {
+        try (Running slow =
+                        running(
+                                directory.resolve("slow.sock"),
+                                client -> true,
+                                Duration.ofSeconds(10));
+                SocketChannel client = SocketChannel.open(StandardProtocolFamily.UNIX)) {
+            client.connect(UnixDomainSocketAddress.of(slow.socket()));
+            client.write(
+                    ByteBuffer.wrap(
+                            post(LIST, "Bearer " + TOKEN).getBytes(StandardCharsets.UTF_8)));
+            var answer = new java.io.ByteArrayOutputStream();
+            ByteBuffer buffer = ByteBuffer.allocate(8192);
+            while (client.read(buffer) >= 0) {
+                answer.write(buffer.array(), 0, buffer.position());
+                buffer.clear();
+            }
+            Thread.sleep(300);
+
+            assertThat(status(answer.toString(StandardCharsets.UTF_8)))
+                    .as("answered")
+                    .isEqualTo(200);
+            assertThat(slow.server().pendingDeadlines())
+                    .as("the server is done with it, though the client has not closed")
+                    .isZero();
+        }
+    }
+
+    // Harm: deadlines of finished connections piling up in memory, one per connection made.
+    @Test
+    void aFinishedConnectionLeavesNoDeadlineBehind() throws Exception {
+        for (int i = 0; i < 20; i++) {
+            exchange(post(LIST, "Bearer " + TOKEN));
+        }
+
+        assertThat(server.pendingDeadlines()).as("no deadline left queued").isZero();
+    }
+
+    // Harm: one peer opening connection after connection until the process has no descriptor left.
+    @Test
+    @org.junit.jupiter.api.Timeout(20)
+    void atMostSixtyFourConnectionsAreServedAtOnceAndTheNextWaitsForAPlace() throws Exception {
+        List<SocketChannel> stalled = new java.util.ArrayList<>();
+        try {
+            for (int i = 0; i < McpHttpServer.MAX_CONNECTIONS; i++) {
+                SocketChannel each = connect();
+                each.write(
+                        ByteBuffer.wrap(
+                                "POST /mcp HTTP/1.1\r\nX-Half"
+                                        .getBytes(StandardCharsets.US_ASCII)));
+                stalled.add(each);
+            }
+            Thread.sleep(200);
+            long start = System.nanoTime();
+
+            String answer = exchange(post(LIST, "Bearer " + TOKEN));
+
+            assertThat(status(answer)).as("answered once a place is free").isEqualTo(200);
+            assertThat(Duration.ofNanos(System.nanoTime() - start))
+                    .as("only after a stalled connection reached its 800 ms deadline")
+                    .isGreaterThan(Duration.ofMillis(400));
+        } finally {
+            for (SocketChannel each : stalled) {
+                each.close();
+            }
+        }
+    }
+
+    // Harm: the kernel's peer check passing another user, which no stand-in predicate would show.
+    @Test
+    void theKernelsPeerCheckAnswersTheOwnerAndNoOtherUser() throws Exception {
+        var users = directory.getFileSystem().getUserPrincipalLookupService();
+        var owner = Files.getOwner(directory);
+        var root = users.lookupPrincipalByName("root");
+        try (Running own =
+                        running(
+                                directory.resolve("own.sock"),
+                                McpHttpServer.sameUserAs(owner),
+                                Duration.ofSeconds(5));
+                Running other =
+                        running(
+                                directory.resolve("other.sock"),
+                                McpHttpServer.sameUserAs(root),
+                                Duration.ofSeconds(5))) {
+            assertThat(owner).as("the test does not run as root").isNotEqualTo(root);
+
+            assertThat(status(exchange(own.socket(), post(LIST, "Bearer " + TOKEN), false)))
+                    .as("the owner")
+                    .isEqualTo(200);
+            assertThat(exchange(other.socket(), post(LIST, "Bearer " + TOKEN), false))
+                    .as("another user gets nothing")
+                    .isEmpty();
+        }
+    }
+
+    // Harm: the token printed wherever a request's head is logged or shown in an exception.
+    @Test
+    void aRequestsHeadNeverShowsItsHeaderValuesAsText() throws Exception {
+        HttpRequestHead head =
+                HttpRequestHead.read(
+                        new ByteArrayInputStream(
+                                ("POST /mcp HTTP/1.1\r\nAuthorization: Bearer "
+                                                + TOKEN
+                                                + "\r\n\r\n")
+                                        .getBytes(StandardCharsets.US_ASCII)));
+
+        assertThat(head.toString())
+                .as("no token in its text")
+                .doesNotContain(TOKEN)
+                .doesNotContain(TOKEN.substring(0, 16));
+    }
+
+    /** A second server for one test, on a socket of its own. */
+    record Running(McpHttpServer server, Thread thread, Path socket) implements AutoCloseable {
+        @Override
+        public void close() throws InterruptedException {
+            server.close();
+            thread.join(5_000);
+        }
+    }
+
+    private Running running(
+            Path at, java.util.function.Predicate<SocketChannel> peer, Duration deadline)
+            throws Exception {
+        BearerToken token =
+                BearerToken.read(
+                        new ByteArrayInputStream(
+                                (TOKEN + "\n").getBytes(StandardCharsets.US_ASCII)));
+        McpSession session =
+                new McpSession(
+                        Tool.of(VarlinkIdl.parse(StandInDaemon.tasks1())),
+                        (method, parameters) -> Map.of(),
+                        "0");
+        McpHttpServer started = new McpHttpServer(at, token, session, peer, deadline);
+        Thread thread =
+                Thread.ofPlatform()
+                        .daemon()
+                        .start(
+                                () -> {
+                                    try {
+                                        started.serve();
+                                    } catch (IOException ex) {
+                                        throw new IllegalStateException(ex);
+                                    }
+                                });
+        return new Running(started, thread, at);
+    }
+
     static String post(String json, String authorization) {
         return "POST /mcp HTTP/1.1\r\nHost: porelo\r\nContent-Type: application/json\r\n"
                 + (authorization == null ? "" : "Authorization: " + authorization + "\r\n")
@@ -288,7 +452,12 @@ class McpHttpServerTest {
 
     /** Sends a request and reads everything until the server closes. */
     private String exchange(String request, boolean halfClose) throws IOException {
-        try (SocketChannel client = connect()) {
+        return exchange(socket, request, halfClose);
+    }
+
+    private static String exchange(Path at, String request, boolean halfClose) throws IOException {
+        try (SocketChannel client = SocketChannel.open(StandardProtocolFamily.UNIX)) {
+            client.connect(UnixDomainSocketAddress.of(at));
             client.write(ByteBuffer.wrap(request.getBytes(StandardCharsets.UTF_8)));
             if (halfClose) {
                 client.shutdownOutput();

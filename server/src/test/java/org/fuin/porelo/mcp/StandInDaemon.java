@@ -33,11 +33,21 @@ final class StandInDaemon implements AutoCloseable {
 
     /** Serves a description, with handlers by method name without the interface. */
     StandInDaemon(Path directory, String description, Map<String, VarlinkServer.Method> methods) {
+        this(directory, "org.fuin.porelo.Tasks1", description, "9.9.9-standin", methods);
+    }
+
+    /** Serves a description under an interface name, reporting a version. */
+    StandInDaemon(
+            Path directory,
+            String interfaceName,
+            String description,
+            String version,
+            Map<String, VarlinkServer.Method> methods) {
         socket = directory.resolve("daemon.sock");
         server =
-                new VarlinkServer(socket, "org.fuin.porelo.Tasks1")
+                new VarlinkServer(socket, interfaceName)
                         .describedBy(description)
-                        .reporting("9.9.9-standin");
+                        .reporting(version);
         for (Map.Entry<String, VarlinkServer.Method> method : methods.entrySet()) {
             final String name = method.getKey();
             final VarlinkServer.Method handler = method.getValue();

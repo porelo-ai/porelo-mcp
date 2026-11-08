@@ -24,7 +24,12 @@ final class SocketPlace {
      * @throws StartRefused When the place is refused, saying why.
      */
     static UserPrincipal check(Path socket) throws StartRefused {
-        final Path directory = socket.toAbsolutePath().getParent();
+        final Path absolute = socket.toAbsolutePath();
+        if (!absolute.equals(absolute.normalize())) {
+            // A '.' or '..' would put a link where the check below no longer sees it as one.
+            throw new StartRefused("The socket " + socket + " holds a '.' or '..' segment");
+        }
+        final Path directory = absolute.getParent();
         if (directory == null) {
             throw new StartRefused("The socket " + socket + " has no directory");
         }

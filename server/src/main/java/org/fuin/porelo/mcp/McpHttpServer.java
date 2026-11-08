@@ -15,8 +15,6 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
 import java.time.Duration;
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import org.fuin.porelo.wire.Json;
@@ -32,13 +30,21 @@ public final class McpHttpServer implements AutoCloseable {
     /** The one path MCP is served on. */
     static final String PATH = "/mcp";
 
+    /** The most connections served at once; the next one waits in the kernel's backlog. */
+    static final int MAX_CONNECTIONS = 64;
+
+    /** The most bytes read away after an answer, of what had already arrived. */
+    static final int DISCARDED = 64 * 1024;
+
     private final Path socket;
     private final BearerToken token;
     private final McpSession session;
     private final Predicate<SocketChannel> peer;
     private final Duration deadline;
     private final ServerSocketChannel channel;
-    private final ScheduledExecutorService closer;
+    private final java.util.concurrent.ScheduledThreadPoolExecutor closer;
+    private final java.util.concurrent.Semaphore places =
+            new java.util.concurrent.Semaphore(MAX_CONNECTIONS);
     private volatile boolean closed;
 
     /**
@@ -64,8 +70,11 @@ public final class McpHttpServer implements AutoCloseable {
         this.peer = peer;
         this.deadline = deadline;
         this.closer =
-                Executors.newSingleThreadScheduledExecutor(
+                new java.util.concurrent.ScheduledThreadPoolExecutor(
+                        1,
                         task -> Thread.ofPlatform().daemon().name("mcp-deadline").unstarted(task));
+        // A finished connection's deadline leaves the queue at once, not when it would have run.
+        closer.setRemoveOnCancelPolicy(true);
         this.channel = ServerSocketChannel.open(StandardProtocolFamily.UNIX);
         try {
             channel.bind(UnixDomainSocketAddress.of(socket));
@@ -108,10 +117,20 @@ public final class McpHttpServer implements AutoCloseable {
      */
     public void serve() throws IOException {
         while (!closed) {
+            try {
+                // Waits for a free place, looking up now and then to see whether it was closed.
+                if (!places.tryAcquire(200, TimeUnit.MILLISECONDS)) {
+                    continue;
+                }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return;
+            }
             final SocketChannel client;
             try {
                 client = channel.accept();
             } catch (IOException ex) {
+                places.release();
                 if (closed) {
                     return;
                 }
@@ -123,26 +142,28 @@ public final class McpHttpServer implements AutoCloseable {
 
     private void handle(SocketChannel client) {
         try (client) {
-            if (!peer.test(client)) {
-                // Another user's process gets no answer at all, not even a refusal to learn from.
-                return;
-            }
-            final var timeout =
-                    closer.schedule(
-                            () -> closeQuietly(client), deadline.toMillis(), TimeUnit.MILLISECONDS);
-            try {
-                final InputStream in = Channels.newInputStream(client);
-                answer(in, Channels.newOutputStream(client));
-                // Closing with unread bytes resets the connection and drops the answer just sent,
-                // so the
-                // rest is read away first: bounded, and within the same deadline.
-                client.shutdownOutput();
-                drain(in);
-            } finally {
-                timeout.cancel(false);
-            }
+            serveOne(client);
         } catch (IOException | RuntimeException ex) {
             // A connection that broke or ran out of time is simply closed.
+        } finally {
+            places.release();
+        }
+    }
+
+    private void serveOne(SocketChannel client) throws IOException {
+        if (!peer.test(client)) {
+            // Another user's process gets no answer at all, not even a refusal to learn from.
+            return;
+        }
+        final var timeout =
+                closer.schedule(
+                        () -> closeQuietly(client), deadline.toMillis(), TimeUnit.MILLISECONDS);
+        try {
+            answer(Channels.newInputStream(client), Channels.newOutputStream(client));
+            client.shutdownOutput();
+            discardArrived(client);
+        } finally {
+            timeout.cancel(false);
         }
     }
 
@@ -193,12 +214,21 @@ public final class McpHttpServer implements AutoCloseable {
         }
     }
 
-    private static void drain(InputStream in) throws IOException {
-        final byte[] discard = new byte[8192];
-        long left = HttpRequestHead.MAX_HEAD + (long) HttpRequestHead.MAX_BODY;
-        int read;
-        while (left > 0
-                && (read = in.read(discard, 0, (int) Math.min(discard.length, left))) >= 0) {
+    /**
+     * Reads away, without waiting, what the peer sent beyond the request: closing with unread bytes
+     * resets the connection and can drop the answer just sent. At most {@link #DISCARDED} bytes,
+     * never read for, and never from a peer that is still sending.
+     */
+    private static void discardArrived(SocketChannel client) throws IOException {
+        client.configureBlocking(false);
+        final java.nio.ByteBuffer discard = java.nio.ByteBuffer.allocate(8192);
+        int left = DISCARDED;
+        while (left > 0) {
+            discard.clear().limit(Math.min(discard.capacity(), left));
+            final int read = client.read(discard);
+            if (read <= 0) {
+                return;
+            }
             left -= read;
         }
     }
@@ -251,19 +281,29 @@ public final class McpHttpServer implements AutoCloseable {
         }
     }
 
+    /** How many deadlines are queued, for connections not yet done. */
+    int pendingDeadlines() {
+        return closer.getQueue().size();
+    }
+
     /** Stops accepting and removes the socket's path, which this server bound itself. */
     @Override
-    public void close() {
-        closed = true;
-        try {
-            channel.close();
-        } catch (IOException ex) {
-            // Closing is all that is left to do.
+    public synchronized void close() {
+        if (closed) {
+            // Once only: a second removal could take a path another process has bound since.
+            return;
         }
+        closed = true;
+        // The path goes first, so serve() cannot return - and the process exit - before it is gone.
         try {
             Files.deleteIfExists(socket);
         } catch (IOException ex) {
             // The path is left; the daemon removes a stale socket before the next start.
+        }
+        try {
+            channel.close();
+        } catch (IOException ex) {
+            // Closing is all that is left to do.
         }
         closer.shutdownNow();
     }

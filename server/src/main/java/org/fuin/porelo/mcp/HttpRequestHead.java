@@ -33,7 +33,11 @@ record HttpRequestHead(String method, String target, Map<String, String> headers
     /** Headers that must not appear twice, since two readers could each take another one. */
     private static final java.util.Set<String> ONCE =
             java.util.Set.of(
-                    "content-length", "authorization", "mcp-protocol-version", "mcp-method");
+                    "content-length",
+                    "authorization",
+                    "host",
+                    "mcp-protocol-version",
+                    "mcp-method");
 
     /** A request refused as malformed, with the status it gets. */
     static final class Refused extends Exception {
@@ -115,7 +119,7 @@ record HttpRequestHead(String method, String target, Map<String, String> headers
                 throw new Refused(400, "A header name that is no token");
             }
             final String name = line.substring(0, colon).toLowerCase(Locale.ROOT);
-            final String value = line.substring(colon + 1).strip();
+            final String value = value(line.substring(colon + 1));
             if (name.equals("transfer-encoding")) {
                 throw new Refused(400, "Transfer-Encoding is not taken; send Content-Length");
             }
@@ -165,6 +169,34 @@ record HttpRequestHead(String method, String target, Map<String, String> headers
      */
     @Nullable String header(String name) {
         return headers.get(name);
+    }
+
+    /**
+     * A header's value without the spaces and tabs around it; any other control byte is refused,
+     * since another reader would strip or keep it otherwise.
+     */
+    private static String value(String raw) throws Refused {
+        for (int i = 0; i < raw.length(); i++) {
+            final char c = raw.charAt(i);
+            if (c < 0x20 && c != '\t' || c == 0x7f) {
+                throw new Refused(400, "A header value holds a control byte");
+            }
+        }
+        int start = 0;
+        int end = raw.length();
+        while (start < end && (raw.charAt(start) == ' ' || raw.charAt(start) == '\t')) {
+            start++;
+        }
+        while (end > start && (raw.charAt(end - 1) == ' ' || raw.charAt(end - 1) == '\t')) {
+            end--;
+        }
+        return raw.substring(start, end);
+    }
+
+    /** The method, the target and the headers' names: never a value, which may be the token. */
+    @Override
+    public String toString() {
+        return "HttpRequestHead[" + method + " " + target + ", headers " + headers.keySet() + "]";
     }
 
     private static boolean isToken(String name) {

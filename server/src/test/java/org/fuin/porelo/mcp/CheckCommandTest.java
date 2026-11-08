@@ -100,6 +100,91 @@ class CheckCommandTest {
         }
     }
 
+    // Harm: "reached" said of a socket that answers, but is no Porelo daemon or names no version.
+    @Test
+    void anotherInterfaceOrNoVersionIsNotReached() throws Exception {
+        Path one = Files.createDirectory(directory.resolve("other-interface"));
+        Path two = Files.createDirectory(directory.resolve("no-version"));
+        Path three = Files.createDirectory(directory.resolve("no-tasks1"));
+        try (var other =
+                        new StandInDaemon(
+                                one, "interface org.example.Other1\nmethod X() -> ()\n", Map.of());
+                var blank =
+                        new StandInDaemon(
+                                two,
+                                "org.fuin.porelo.Tasks1",
+                                StandInDaemon.tasks1(),
+                                "",
+                                Map.of());
+                var elsewhere =
+                        new StandInDaemon(
+                                three,
+                                "org.example.Other1",
+                                "interface org.example.Other1\nmethod X() -> ()\n",
+                                "1",
+                                Map.of())) {
+            Ran otherRan = run(Map.of(), "--check", "--daemon-socket", other.socket().toString());
+            Ran blankRan = run(Map.of(), "--check", "--daemon-socket", blank.socket().toString());
+            Ran elsewhereRan =
+                    run(Map.of(), "--check", "--daemon-socket", elsewhere.socket().toString());
+
+            assertThat(otherRan.code).as("a description of another interface").isEqualTo(3);
+            assertThat(otherRan.err)
+                    .as("names the interface it got")
+                    .contains("org.example.Other1");
+            assertThat(blankRan.code).as("a blank version").isEqualTo(3);
+            assertThat(blankRan.err).as("says the version is missing").contains("version");
+            assertThat(elsewhereRan.code).as("a daemon without Tasks1").isEqualTo(3);
+            assertThat(elsewhereRan.err)
+                    .as("names what it asked")
+                    .contains("GetInterfaceDescription")
+                    .contains("org.fuin.porelo.Tasks1");
+            for (Ran each : List.of(otherRan, blankRan, elsewhereRan)) {
+                assertThat(each.out).as("nothing that reads as reached").isEmpty();
+            }
+        }
+    }
+
+    // Harm: a wrong argument read as a broken daemon, or crashing with a stack trace.
+    @Test
+    void aWrongArgumentOrAnUnusablePathExitsTwoAndSaysWhich() {
+        Ran unknown = run(Map.of(), "--check", "--socket", "x");
+        Ran nul = run(Map.of(), "--check", "--daemon-socket", "a\0b");
+
+        assertThat(unknown.code).as("an unknown argument").isEqualTo(2);
+        assertThat(unknown.err).as("names it").contains("--socket");
+        assertThat(nul.code).as("a path holding a NUL byte").isEqualTo(2);
+        assertThat(nul.err).as("says the path is unusable").contains("--daemon-socket");
+    }
+
+    // Harm: a serve started with wrong arguments, read by the daemon as a broken daemon or a crash.
+    @Test
+    void serveWithAWrongArgumentOrAnUnusablePathExitsTwoBeforeReadingTheToken() {
+        Ran unknown =
+                run(
+                        Map.of(),
+                        "serve",
+                        "--task",
+                        "t",
+                        "--socket",
+                        "s",
+                        "--daemon-socket",
+                        "d",
+                        "--more",
+                        "x");
+        Ran missing = run(Map.of(), "serve", "--task", "t", "--socket", "s");
+        Ran nul = run(Map.of(), "serve", "--task", "t", "--socket", "a\0b", "--daemon-socket", "d");
+
+        assertThat(unknown.code).as("an unknown argument").isEqualTo(2);
+        assertThat(missing.code).as("a missing argument").isEqualTo(2);
+        assertThat(missing.err).as("names it").contains("--daemon-socket");
+        assertThat(nul.code).as("a path holding a NUL byte").isEqualTo(2);
+        assertThat(nul.err)
+                .as("says the path is unusable, not the token")
+                .contains("--socket")
+                .doesNotContain("token");
+    }
+
     record Ran(int code, String out, String err) {}
 
     static Ran run(Map<String, String> environment, String... args) {

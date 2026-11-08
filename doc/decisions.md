@@ -42,12 +42,15 @@ images with the pinned GraalVM and `-march=x86-64`:
   - one request per connection: every answer says `Connection: close`, and the connection is closed after it, so no
     second request can hide behind the first;
   - a read deadline per connection, so a peer that stalls in the head or the body is closed, and connections are served
-    apart, so one stalled peer holds up no other;
+    apart, so one stalled peer holds up no other; at most 64 at once, the next waiting in the kernel's backlog;
+  - after its answer a connection is let go at once: what has already arrived beyond the request, at most 64 KiB, is
+    read away without waiting, so closing does not reset the answer;
   - the head at most 16 KiB and 64 header lines, counted while it is read, else `431`; the body at most 1 MiB, checked
     against `Content-Length` before anything is allocated, else `413`;
-  - lines ended by `\r\n` only: a bare `\n`, a folded line, or white space before a header's `:` is refused;
+  - lines ended by `\r\n` only: a bare `\n`, a folded line, white space before a header's `:`, or a control byte in a
+    value other than a tab is refused; only spaces and tabs around a value are dropped;
   - refused with `400` and closed: any `Transfer-Encoding`; a missing, repeated, or not purely decimal `Content-Length`;
-    a body shorter than `Content-Length`; a repeated `Authorization`;
+    a body shorter than `Content-Length`; a repeated `Authorization` or `Host`;
   - the token checked once the head is read and before anything else, so a request without it gets `401` whatever its
     path or method; then a path other than `/mcp` gets `404`, and a method other than `POST` gets `405`;
   - an answer as `application/json`, never a stream.
