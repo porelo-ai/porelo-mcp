@@ -1,6 +1,6 @@
 # MC06 — The Native Executable In Its DEB And RPM Packages
 
-**Status:** Backlog; blocked by [MC03](README.md#mc03), [MC04](README.md#mc04), [MC05](README.md#mc05).
+**Status:** Implementing
 **Size:** M - the native build, two packages and their publication in the build workflow.
 
 **What must be true.** `porelo-mcp` installs from Porelo's package channels as a native executable, in a DEB and an RPM

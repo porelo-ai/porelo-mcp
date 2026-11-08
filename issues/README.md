@@ -13,11 +13,11 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | <a id="mc05"></a>[MC05](MC05-Whether-It-Reaches-The-Daemon.md) | S | - | `porelo-mcp --check` says whether it reaches the daemon, with its version and the methods offered. |
 | <a id="mc04"></a>[MC04](MC04-Stdio-For-A-Person-s-Own-Client.md) | S | - | `porelo-mcp stdio` for a person's own MCP client on the host: the reading methods, writing ones only from the person's own list, destructive ones never. |
 
-## Backlog
+## Implementing
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="mc06"></a>[MC06](MC06-The-Native-Executable-In-Its-DEB-And-RPM-Packages.md) | M | [MC03](#mc03), [MC04](#mc04), [MC05](#mc05) | The native executable in a DEB and an RPM package of its own, built for any x86-64 machine, checked and published by the build workflow. |
+| <a id="mc06"></a>[MC06](MC06-The-Native-Executable-In-Its-DEB-And-RPM-Packages.md) | M | - | The native executable in a DEB and an RPM package of its own, built for any x86-64 machine, checked and published by the build workflow. |
 
 ## Idea
 
