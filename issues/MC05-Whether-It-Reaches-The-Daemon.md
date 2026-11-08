@@ -1,6 +1,6 @@
 # MC05 — Whether It Reaches The Daemon
 
-**Status:** Backlog; blocked by [MC02](README.md#mc02).
+**Status:** Implementing
 **Size:** S - one command reading two Varlink methods.
 
 **What must be true.** `porelo-mcp --check` tells a person or the daemon whether `porelo-mcp` reaches the daemon, with
