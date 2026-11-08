@@ -1,0 +1,2 @@
+title: Over stdio, a call with a progress token streams the daemon's replies as MCP progress, its last reply the result, until the stream ends or the client cancels it.
+type: added

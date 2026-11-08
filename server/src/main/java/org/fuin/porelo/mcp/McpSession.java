@@ -60,12 +60,24 @@ public final class McpSession {
     }
 
     /**
-     * Answers one message.
+     * Answers one message, every call at once and in one answer.
      *
      * @param message One JSON-RPC message.
      * @return The answer, or {@code null} for a notification or a response, which get none.
      */
     public @Nullable String handle(String message) {
+        return handle(message, null);
+    }
+
+    /**
+     * Answers one message; a call with a progress token runs as a stream of {@code streams}, which
+     * sends its progress and its answer itself.
+     *
+     * @param message One JSON-RPC message.
+     * @param streams Where streamed calls run, or {@code null} to answer every call at once.
+     * @return The answer, or {@code null} for a notification, a response, or a call that streams.
+     */
+    @Nullable String handle(String message, @Nullable Streams streams) {
         final Object parsed;
         try {
             parsed = Json.parseDecimals(message);
@@ -91,6 +103,12 @@ public final class McpSession {
                     : null;
         }
         if (!request.containsKey("id")) {
+            if (streams != null
+                    && "notifications/cancelled".equals(method)
+                    && request.get("params") instanceof Map<?, ?> cancelled
+                    && cancelled.get("requestId") instanceof Object requestId) {
+                streams.cancel(requestId);
+            }
             return null;
         }
         if (id == null) {
@@ -107,7 +125,7 @@ public final class McpSession {
             case "initialize" -> result(id, initialize(parameters));
             case "ping" -> result(id, Map.of());
             case "tools/list" -> result(id, Map.of("tools", listed()));
-            case "tools/call" -> call(id, parameters);
+            case "tools/call" -> call(id, parameters, streams);
             default -> error(id, METHOD_NOT_FOUND, "No method '" + method + "'");
         };
     }
@@ -129,7 +147,8 @@ public final class McpSession {
         return tools.values().stream().map(Tool::listed).toList();
     }
 
-    private String call(Object id, Map<String, Object> parameters) {
+    private @Nullable String call(
+            Object id, Map<String, Object> parameters, @Nullable Streams streams) {
         if (!(parameters.get("name") instanceof String name)) {
             return error(id, INVALID_PARAMS, "tools/call names no tool");
         }
@@ -144,21 +163,84 @@ public final class McpSession {
         @SuppressWarnings("unchecked")
         final Map<String, Object> given =
                 arguments == null ? Map.of() : (Map<String, Object>) arguments;
+        final Object token =
+                parameters.get("_meta") instanceof Map<?, ?> meta
+                        ? meta.get("progressToken")
+                        : null;
+        if (streams != null && (token instanceof String || token instanceof Number)) {
+            final boolean started =
+                    streams.start(
+                            id,
+                            cancellation -> {
+                                final String answer =
+                                        stream(id, tool, given, token, streams, cancellation);
+                                // A cancelled request gets no answer, as MCP says.
+                                if (!cancellation.cancelled()) {
+                                    streams.send(answer);
+                                }
+                            });
+            return started
+                    ? null
+                    : error(
+                            id,
+                            INVALID_REQUEST,
+                            "At most " + Streams.MAX_STREAMS + " streams run at once");
+        }
         final Map<String, Object> reply;
         try {
             reply = daemon.call(tool.method(), given);
         } catch (VarlinkException ex) {
-            final String refusal = ex.getErrorName();
-            if (refusal == null) {
-                return error(id, INTERNAL_ERROR, String.valueOf(ex.getMessage()));
-            }
-            final Map<String, Object> refused = new LinkedHashMap<>();
-            refused.put("error", refusal);
-            final Map<String, Object> refusedWith = ex.getParameters();
-            refused.put("parameters", refusedWith == null ? Map.of() : exact(refusedWith));
-            return result(id, toolResult(refused, true));
+            return failed(id, ex);
         }
         return result(id, toolResult(exact(reply), false));
+    }
+
+    /** A streamed call: each reply as progress, the last one also the answer. */
+    private String stream(
+            Object id,
+            Tool tool,
+            Map<String, Object> given,
+            Object token,
+            Streams streams,
+            Cancellation cancellation) {
+        final long[] count = {0};
+        final Map<String, Object> last;
+        try {
+            last =
+                    daemon.stream(
+                            tool.method(),
+                            given,
+                            reply -> streams.send(progress(token, ++count[0], exact(reply))),
+                            cancellation);
+        } catch (VarlinkException ex) {
+            return failed(id, ex);
+        }
+        return result(id, toolResult(exact(last), false));
+    }
+
+    /** A daemon's refusal as the tool's error, or a broken connection as a protocol error. */
+    private static String failed(Object id, VarlinkException ex) {
+        final String refusal = ex.getErrorName();
+        if (refusal == null) {
+            return error(id, INTERNAL_ERROR, String.valueOf(ex.getMessage()));
+        }
+        final Map<String, Object> refused = new LinkedHashMap<>();
+        refused.put("error", refusal);
+        final Map<String, Object> refusedWith = ex.getParameters();
+        refused.put("parameters", refusedWith == null ? Map.of() : exact(refusedWith));
+        return result(id, toolResult(refused, true));
+    }
+
+    private static String progress(Object token, long count, Map<String, Object> reply) {
+        final Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("progressToken", token);
+        parameters.put("progress", count);
+        parameters.put("message", Json.write(reply));
+        final Map<String, Object> notification = new LinkedHashMap<>();
+        notification.put("jsonrpc", "2.0");
+        notification.put("method", "notifications/progress");
+        notification.put("params", parameters);
+        return Json.write(notification);
     }
 
     /**

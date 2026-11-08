@@ -28,6 +28,22 @@ final class StdioLines {
      * @throws IOException When standard input or output fails.
      */
     static void serve(McpSession session, InputStream in, PrintStream out) throws IOException {
+        // Streamed calls write from threads of their own; every message goes out whole, one at a
+        // time.
+        final Streams streams = new Streams(json -> write(out, json));
+        try {
+            read(session, in, out, streams);
+        } finally {
+            try {
+                streams.close();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    private static void read(McpSession session, InputStream in, PrintStream out, Streams streams)
+            throws IOException {
         final ByteArrayOutputStream line = new ByteArrayOutputStream();
         boolean tooLong = false;
         int next;
@@ -42,13 +58,13 @@ final class StdioLines {
                 continue;
             }
             if (tooLong) {
-                answer(out, tooLong());
+                answer(out, streams, tooLong());
             } else {
                 final String message = line.toString(StandardCharsets.UTF_8).strip();
                 if (!message.isEmpty()) {
-                    final String answered = session.handle(message);
+                    final String answered = session.handle(message, streams);
                     if (answered != null) {
-                        answer(out, answered);
+                        answer(out, streams, answered);
                     }
                 }
             }
@@ -71,13 +87,17 @@ final class StdioLines {
         return Json.write(error);
     }
 
-    private static void answer(PrintStream out, String json) throws IOException {
+    private static void answer(PrintStream out, Streams streams, String json) throws IOException {
+        streams.send(json);
+        if (out.checkError()) {
+            throw new IOException("Standard output is closed");
+        }
+    }
+
+    private static void write(PrintStream out, String json) {
         // Json.write escapes every line break inside a string, so one answer is one line.
         out.print(json);
         out.print('\n');
         out.flush();
-        if (out.checkError()) {
-            throw new IOException("Standard output is closed");
-        }
     }
 }

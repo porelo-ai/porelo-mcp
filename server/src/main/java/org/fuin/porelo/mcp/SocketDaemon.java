@@ -3,6 +3,8 @@ package org.fuin.porelo.mcp;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.fuin.porelo.wire.varlink.VarlinkClient;
 import org.fuin.porelo.wire.varlink.VarlinkException;
 
@@ -50,6 +52,44 @@ public final class SocketDaemon implements Daemon {
         // The reply has arrived; failing to close the connection afterwards cannot take it back.
         closeQuietly(client);
         return reply;
+    }
+
+    @Override
+    public Map<String, Object> stream(
+            String method,
+            Map<String, Object> parameters,
+            Consumer<Map<String, Object>> each,
+            Cancellation cancellation) {
+        final VarlinkClient client;
+        try {
+            client = new VarlinkClient(socket);
+        } catch (VarlinkException ex) {
+            throw broken(ex);
+        }
+        // A cancel closes the connection, which ends a read that waits for the next change.
+        cancellation.onCancel(() -> closeQuietly(client));
+        final AtomicReference<Map<String, Object>> last = new AtomicReference<>(Map.of());
+        try {
+            client.callMore(
+                    method,
+                    parameters,
+                    reply -> {
+                        if (cancellation.cancelled()) {
+                            return false;
+                        }
+                        last.set(reply);
+                        each.accept(reply);
+                        return true;
+                    });
+        } catch (VarlinkException ex) {
+            throw ex.getErrorName() == null ? broken(ex) : ex;
+        } catch (RuntimeException ex) {
+            throw broken(ex);
+        } finally {
+            closeQuietly(client);
+        }
+        final Map<String, Object> got = last.get();
+        return got == null ? Map.of() : got;
     }
 
     /** A connection that broke, as a failure without an error name that names the socket. */

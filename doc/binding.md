@@ -95,6 +95,19 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
   every name in `never` itself as well, so a fault on one side alone opens nothing. A daemon that does not answer
   `McpMethods` gets no tools offered.
 
+### Streams
+
+- A call over stdio that carries `_meta.progressToken` calls the method with Varlink's `more`. Each reply goes to the
+  client at once as `notifications/progress`, with that token, a `progress` counting from 1, and the reply as JSON text
+  in `message`. When the daemon ends the stream, its last reply is also the tool's result.
+- Without a progress token a call is answered once, as the daemon answers a call without `more`. A method that answers
+  once gives one reply to `more` too.
+- A stream that sends only on a change, such as `Watch`, ends only when the client sends `notifications/cancelled` for
+  its request. `porelo-mcp` then closes that daemon connection and sends no answer, as MCP has it. What the stream sent
+  is in its progress notifications.
+- At most 64 streams run at once in one stdio session; one more is refused at once with JSON-RPC error `-32600`.
+- Over a task's socket a call is answered once, progress token or not.
+
 ## Checking it
 
 - `porelo-mcp --check [--daemon-socket <path>]` says whether it reaches the daemon, with the version from
