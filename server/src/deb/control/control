@@ -1,0 +1,12 @@
+Package: porelo-mcp
+Version: [[deb.version]]
+Section: devel
+Priority: optional
+Architecture: amd64
+Maintainer: Michael Schnell <michael@fuin.org>
+Depends: libc6 (>= [[mcp.glibc.floor]]), zlib1g (>= 1:[[mcp.zlib.floor]])
+Homepage: https://github.com/porelo-ai/porelo-mcp
+Description: Porelo's daemon contract as MCP tools
+ Offers every method of the Porelo daemon's Tasks1 interface as an MCP tool:
+ over HTTP on a task's own Unix socket when the daemon starts it, and over
+ stdio for a person's own MCP client.

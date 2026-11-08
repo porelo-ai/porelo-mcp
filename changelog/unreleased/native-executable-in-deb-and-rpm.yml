@@ -1,0 +1,2 @@
+title: Ship `porelo-mcp` as a native executable for any x86-64 machine, at `/usr/bin/porelo-mcp` in a DEB and an RPM package that declare the C library and zlib it links.
+type: added

@@ -14,6 +14,20 @@
     <properties>
         <!-- 0.5.1 on: Json.parseDecimals, so a number passes through exactly as it came. -->
         <porelo-wire.version>0.5.1-SNAPSHOT</porelo-wire.version>
+        <!-- The version without -SNAPSHOT, as the packages name it; PackagesIT holds it to the project's. -->
+        <package.version>0.1.0</package.version>
+        <!-- Named as porelo names its snapshots; CI sets the run and clears the local suffix. -->
+        <porelo.snapshot.run>0</porelo.snapshot.run>
+        <porelo.snapshot.suffix>+local.${maven.build.timestamp}</porelo.snapshot.suffix>
+        <deb.version>${package.version}~snapshot.${porelo.snapshot.run}${porelo.snapshot.suffix}</deb.version>
+        <rpm.release>snapshot.${porelo.snapshot.run}</rpm.release>
+        <!-- The newest glibc and zlib symbol versions the native executable needs (measured with objdump -T), for the DEB;
+             PackagesIT checks both packages against the executable built. -->
+        <mcp.glibc.floor>2.34</mcp.glibc.floor>
+        <mcp.zlib.floor>1.2.2</mcp.zlib.floor>
+        <package.doc>/usr/share/doc/porelo-mcp</package.doc>
+        <!-- What the integration tests run under -Pnative. -->
+        <mcp.executable>${project.build.directory}/porelo-mcp</mcp.executable>
     </properties>
     <dependencies>
         <dependency>
@@ -51,4 +65,191 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <!-- The installed program is a native executable, so it needs no Java where it runs. -->
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <imageName>porelo-mcp</imageName>
+                            <mainClass>org.fuin.porelo.mcp.Main</mainClass>
+                            <buildArgs>
+                                <!-- The baseline every x86-64 CPU has, as every Porelo executable: the default
+                                     would ask for AVX2 and refuse to start on an older machine. -->
+                                <buildArg>-march=x86-64</buildArg>
+                            </buildArgs>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>build-native</id>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                                <phase>package</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- The bill of what the executable is built from, shipped beside it. -->
+                    <plugin>
+                        <groupId>org.cyclonedx</groupId>
+                        <artifactId>cyclonedx-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>makeBom</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <outputFormat>json</outputFormat>
+                            <outputName>sbom.cdx</outputName>
+                            <includeTestScope>false</includeTestScope>
+                            <!-- The bill goes into the packages; nothing goes to Central, which the plugin
+                                 would otherwise take as a reason to make none. -->
+                            <skipNotDeployed>false</skipNotDeployed>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.vafer</groupId>
+                        <artifactId>jdeb</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jdeb</goal>
+                                </goals>
+                                <configuration>
+                                    <deb>${project.build.directory}/porelo-mcp_${deb.version}_amd64.deb</deb>
+                                    <snapshotExpand>false</snapshotExpand>
+                                    <dataSet>
+                                        <data>
+                                            <src>${mcp.executable}</src>
+                                            <type>file</type>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>/usr/bin</prefix>
+                                                <user>root</user>
+                                                <group>root</group>
+                                                <filemode>755</filemode>
+                                            </mapper>
+                                        </data>
+                                        <data>
+                                            <src>${project.build.directory}/sbom.cdx.json</src>
+                                            <type>file</type>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>${package.doc}</prefix>
+                                                <user>root</user>
+                                                <group>root</group>
+                                                <filemode>644</filemode>
+                                            </mapper>
+                                        </data>
+                                        <data>
+                                            <src>${project.basedir}/../LICENSE</src>
+                                            <dst>copyright</dst>
+                                            <type>file</type>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>${package.doc}</prefix>
+                                                <user>root</user>
+                                                <group>root</group>
+                                                <filemode>644</filemode>
+                                            </mapper>
+                                        </data>
+                                    </dataSet>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>rpm-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>porelo-mcp-rpm</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>attached-rpm</goal>
+                                </goals>
+                                <configuration>
+                                    <name>porelo-mcp</name>
+                                    <version>${package.version}</version>
+                                    <release>${rpm.release}</release>
+                                    <license>GPL-3.0-or-later</license>
+                                    <group>Development/Tools</group>
+                                    <summary>Porelo's daemon contract as MCP tools</summary>
+                                    <description>Offers every method of the Porelo daemon's Tasks1 interface as an MCP tool: over HTTP on a task's own Unix socket when the daemon starts it, and over stdio for a person's own MCP client.</description>
+                                    <url>https://github.com/porelo-ai/porelo-mcp</url>
+                                    <needarch>x86_64</needarch>
+                                    <!-- No requires of its own: rpmbuild reads every library and symbol version from the executable
+                                         itself, so the RPM's floors are the measured ones; PackagesIT checks both packages. -->
+                                    <defaultUsername>root</defaultUsername>
+                                    <defaultGroupname>root</defaultGroupname>
+                                    <mappings>
+                                        <mapping>
+                                            <directory>/usr/bin</directory>
+                                            <directoryIncluded>false</directoryIncluded>
+                                            <filemode>755</filemode>
+                                            <sources>
+                                                <source>
+                                                    <location>${mcp.executable}</location>
+                                                </source>
+                                            </sources>
+                                        </mapping>
+                                        <!-- The directory on its own: a mapping with files gives its directory the files' mode. -->
+                                        <mapping>
+                                            <directory>${package.doc}</directory>
+                                            <filemode>755</filemode>
+                                        </mapping>
+                                        <mapping>
+                                            <directory>${package.doc}</directory>
+                                            <directoryIncluded>false</directoryIncluded>
+                                            <filemode>644</filemode>
+                                            <documentation>true</documentation>
+                                            <sources>
+                                                <source>
+                                                    <location>${project.build.directory}/sbom.cdx.json</location>
+                                                </source>
+                                                <source>
+                                                    <location>${project.basedir}/../LICENSE</location>
+                                                </source>
+                                            </sources>
+                                        </mapping>
+                                    </mappings>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- The integration tests run the executable from the packages, as a machine runs it. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <mcp.executable>${mcp.executable}</mcp.executable>
+                                <!-- The raw parts a package's version is made of, so a test can work it out
+                                     itself rather than read back deb.version or rpm.release. -->
+                                <porelo.snapshot.run>${porelo.snapshot.run}</porelo.snapshot.run>
+                                <porelo.snapshot.suffix>${porelo.snapshot.suffix}</porelo.snapshot.suffix>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

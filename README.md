@@ -19,6 +19,16 @@ It holds no rule of its own: every answer and every refusal is the daemon's.
 
 JDK 25, the pinned GraalVM. See [AGENTS.md](AGENTS.md) for the conventions.
 
+The native executable and its packages, with `rpm` and zlib's headers installed:
+
+```
+./mvnw -B -s settings.xml -Pnative verify
+```
+
+This leaves `server/target/porelo-mcp`, the DEB in `server/target` and the RPM under `server/target/rpm`. Their
+integration tests run the executable unpacked from each package, and fail when it asks for a CPU feature beyond
+x86-64 or links a library the packages do not declare.
+
 ## License
 
 GPL-3.0-or-later, see [LICENSE](LICENSE).

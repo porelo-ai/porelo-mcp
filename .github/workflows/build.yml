@@ -1,6 +1,6 @@
-# Builds porelo-mcp on every change: compiled, unit tests run, and the shared checks of the root's validate.
-# Nothing goes to Maven Central: porelo-mcp is a native executable in packages of its own, and nothing builds against an
-# artifact here. Against porelo-parent as a snapshot while it is one (-U takes the newest), as the shared rules allow.
+# Builds porelo-mcp on every change: compiled, unit tests run, the shared checks of the root's validate, and the native
+# executable in its DEB and RPM, each unpacked and run. Nothing goes to Maven Central: porelo-mcp is a native executable
+# in packages of its own, and nothing builds against an artifact here. Against porelo-parent as a snapshot while it is one (-U takes the newest), as the shared rules allow.
 name: Build
 
 on:
@@ -28,7 +28,7 @@ jobs:
         name: Build and test
         # Pinned, not ubuntu-latest.
         runs-on: ubuntu-24.04
-        # A run takes about 3 minutes; a slow runner must end, not run for GitHub's six hours.
+        # A run takes about 5 minutes with the native build; a slow runner must end, not run for GitHub's six hours.
         timeout-minutes: 35
         steps:
             # Every commit, so the pushed range can be read.
@@ -40,9 +40,45 @@ jobs:
             - name: The pinned GraalVM
               uses: ./.github/actions/pinned-jdk
 
-            # validate runs check-actions, check-shared, check-citations and check-readmes.
-            - name: Build, unit tests and the shared checks
-              run: ./mvnw -B -U -s settings.xml verify
+            # rpmbuild for the .rpm, zlib's headers for the native image.
+            - name: The packaging tools
+              run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm zlib1g-dev
+
+            # main publishes snapshots and a tag a release; each refuses the other's version, so a release is never a
+            # snapshot by mistake and a snapshot never takes a release's number.
+            - name: Which channel
+              id: channel
+              env:
+                  RUN_NUMBER: ${{ github.run_number }}
+              run: |
+                  set -euo pipefail
+                  version="$(sed -n 's|^    <version>\(.*\)</version>$|\1|p' pom.xml | head -1)"
+                  [ -n "$version" ] || { echo "::error::no version in pom.xml"; exit 1; }
+                  if [ "$GITHUB_REF_TYPE" = tag ]; then
+                      case "$version" in *-SNAPSHOT) echo "::error::a tag on a snapshot version: $version"; exit 1 ;; esac
+                      echo "channel=releases" >> "$GITHUB_OUTPUT"
+                      # In the pom itself, not as -D: the rpm plugin takes the pom's own value over one given there.
+                      sed -i -e "s|<deb.version>.*</deb.version>|<deb.version>${version}</deb.version>|" \
+                          -e "s|<rpm.release>.*</rpm.release>|<rpm.release>1</rpm.release>|" server/pom.xml
+                      echo "args=" >> "$GITHUB_OUTPUT"
+                  else
+                      case "$version" in *-SNAPSHOT) ;; *) echo "::error::a branch carries a release version: $version"; exit 1 ;; esac
+                      echo "channel=snapshots" >> "$GITHUB_OUTPUT"
+                      echo "args=-Dporelo.snapshot.run=$RUN_NUMBER -Dporelo.snapshot.suffix=" >> "$GITHUB_OUTPUT"
+                  fi
+
+            # validate runs check-actions, check-shared, check-citations and check-readmes; -Pnative builds the executable
+            # and both packages, and its integration tests run the executable unpacked from each.
+            - name: Build, unit tests, the shared checks, and the packages
+              run: ./mvnw -B -U -s settings.xml -Pnative verify ${{ steps.channel.outputs.args }}
+
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: packages
+                  path: |
+                      server/target/*.deb
+                      server/target/rpm/*/RPMS/*/*.rpm
+                  if-no-files-found: error
 
             # A direct push to main never meets the pull request's check, so the push's own range is read here, by the
             # rule this commit carries. A tag checks the commit it names alone, a first commit too. The push that creates main names no start (all
