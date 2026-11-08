@@ -38,6 +38,9 @@ runs:
         # Spotless refuses an shfmt of another version than the parent pins, so a moved pin fails here loudly.
         - name: Install the pinned shfmt
           shell: bash
+          env:
+              # The job's token, for a download from https://github.com alone; none on a host's forge.
+              PORELO_PINNED_GITHUB_TOKEN: ${{ github.server_url == 'https://github.com' && github.token || '' }}
           run: |
               set -eu
               . "$GITHUB_ACTION_PATH/pinned.sh"
@@ -71,9 +74,12 @@ runs:
               # The wrapper fetches its Maven once, checks it against distributionSha256Sum and installs it only whole,
               # so asking it again after a failed fetch is a retry; a cached one answers at once.
               pinned_retry "the wrapper's Maven" ./mvnw -B -q --version >/dev/null
-              sha256=$(./mvnw -B -q -U -s settings.xml -N exec:exec@machines -Dmachines.args="jdk --print-sha256" |
-                  tail -n 1)
-              [[ $sha256 =~ ^[0-9a-f]{64}$ ]] || { echo "::error::porelo-machines named no pinned digest"; exit 1; }
+              # A failure says so, with what Maven said: under -q its [ERROR] lines go to standard output, here.
+              said=$(./mvnw -B -q -U -s settings.xml -N exec:exec@machines -Dmachines.args="jdk --print-sha256") \
+                  || { rc=$?; echo "$said"; echo "::error::porelo-machines could not name the pinned digest (exit $rc)"; exit 1; }
+              sha256=$(tail -n 1 <<<"$said")
+              [[ $sha256 =~ ^[0-9a-f]{64}$ ]] \
+                  || { echo "$said"; echo "::error::porelo-machines named no pinned digest"; exit 1; }
               echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
 
         - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -84,6 +90,9 @@ runs:
 
         - name: Install the pinned GraalVM
           shell: bash
+          env:
+              # The job's token, for a download from https://github.com alone; none on a host's forge.
+              PORELO_PINNED_GITHUB_TOKEN: ${{ github.server_url == 'https://github.com' && github.token || '' }}
           run: |
               set -eu
               export JAVA_HOME="$JAVA_HOME_25_X64"
