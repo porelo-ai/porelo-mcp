@@ -1,6 +1,6 @@
 # MC08 — MCP 2026-07-28 Spoken
 
-**Status:** Implementing
+**Status:** Review
 **Size:** M - a second era beside the first in the session, `server/discover`, and the HTTP headers checked against the body.
 
 **What must be true.** An MCP client that offers only the version `2026-07-28` reaches the daemon's tools through
@@ -24,6 +24,9 @@
   the daemon's reply as a complete result. Seen red once.
 - In the session: `server/discover` names both eras; an unknown version gets `-32022` with what is supported; missing
   capabilities get `-32602`; `ping` and `initialize` are no methods of this era. Each seen red once.
-- Over HTTP: a modern request with matching headers is served; a method, version or tool name that differs, or a
-  modern body without its headers, gets `400` and `-32020`; an unknown version gets `400` and `-32022`; the first era
-  is served as before. Each seen red once.
+- Over HTTP: a modern request with matching headers is served; a method, version or tool name that differs or is
+  missing, a tool name on another method, a body that is no object, or a modern body without its headers, gets `400`
+  and `-32020`; an unknown version gets `400` and `-32022`; a modern notification without its version in `_meta` is
+  taken; the first era is served as before. Each seen red once.
+- A refused and a streamed call of `2026-07-28` are complete results; a cancel of a version not spoken cancels nothing;
+  `-32022` names the versions of both eras. Each seen red once.

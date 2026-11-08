@@ -287,15 +287,55 @@ class McpHttpServerTest {
         assertThat(status(name)).as("another tool").isEqualTo(400);
         assertThat(body(name)).as("HeaderMismatch").contains("-32020");
         assertThat(status(nameMissing)).as("no tool header").isEqualTo(400);
+        assertThat(body(nameMissing)).as("HeaderMismatch").contains("-32020");
         assertThat(status(version)).as("another version").isEqualTo(400);
         assertThat(body(version)).as("HeaderMismatch").contains("-32020");
         assertThat(status(methodOnly)).as("a method header on a body without one").isEqualTo(400);
+        assertThat(body(methodOnly)).as("HeaderMismatch").contains("-32020");
+        String firstEraBody = exchange(modern(null, "tools/list", null, LIST));
+        assertThat(status(firstEraBody)).as("Mcp-Method on a first-era body").isEqualTo(400);
+        assertThat(body(firstEraBody)).as("HeaderMismatch").contains("-32020");
+        String batch = exchange(modern("2026-07-28", "tools/call", "List", "[" + call + "]"));
+        assertThat(status(batch)).as("a batch").isEqualTo(400);
+        assertThat(body(batch)).as("HeaderMismatch").contains("-32020");
+        String nameOnAList =
+                exchange(
+                        modern(
+                                "2026-07-28",
+                                "tools/list",
+                                "List",
+                                discover("2026-07-28").replace("server/discover", "tools/list")));
+        assertThat(status(nameOnAList)).as("a tool name on a list").isEqualTo(400);
+        assertThat(body(nameOnAList)).as("HeaderMismatch").contains("-32020");
+        String nullVersion =
+                exchange(
+                        post(
+                                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":"
+                                        + "{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":null}}}",
+                                "Bearer " + TOKEN));
+        assertThat(status(nullVersion)).as("a version of null, without headers").isEqualTo(400);
         String noHeaders = exchange(post(discover("2026-07-28"), "Bearer " + TOKEN));
         assertThat(status(noHeaders)).as("a modern body without its headers").isEqualTo(400);
         assertThat(body(noHeaders)).as("HeaderMismatch").contains("-32020");
         assertThat(status(exchange(modern("2026-07-28", "tools/call", "List", call))))
                 .as("the same call with matching headers")
                 .isEqualTo(200);
+    }
+
+    // Harm: a modern client's cancel refused, so the call it ends runs on; or one of a version not
+    // spoken taken in.
+    @Test
+    void aModernNotificationIsTakenWithoutItsVersionInMetaButNotOfAVersionNotSpoken()
+            throws Exception {
+        String cancel =
+                "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\",\"params\":{\"requestId\":1}}";
+
+        assertThat(status(exchange(modern("2026-07-28", "notifications/cancelled", null, cancel))))
+                .as("taken")
+                .isEqualTo(202);
+        String unknown = exchange(modern("2099-01-01", "notifications/cancelled", null, cancel));
+        assertThat(status(unknown)).as("a version not spoken").isEqualTo(400);
+        assertThat(body(unknown)).as("UnsupportedProtocolVersion").contains("-32022");
     }
 
     // Harm: a client of an unknown version told nothing it could fall back to.

@@ -118,6 +118,13 @@ public final class McpSession {
                     : null;
         }
         if (!request.containsKey("id")) {
+            if (request.get("params") instanceof Map<?, ?> notified
+                    && notified.get("_meta") instanceof Map<?, ?> meta
+                    && meta.containsKey(PROTOCOL_VERSION)
+                    && !MODERN_VERSIONS.contains(meta.get(PROTOCOL_VERSION))) {
+                // A notification of a version not spoken is not understood, so it changes nothing.
+                return null;
+            }
             if (streams != null
                     && "notifications/cancelled".equals(method)
                     && request.get("params") instanceof Map<?, ?> cancelled
@@ -137,9 +144,13 @@ public final class McpSession {
         @SuppressWarnings("unchecked")
         final Map<String, Object> parameters =
                 params == null ? Map.of() : (Map<String, Object>) params;
-        if (parameters.get("_meta") instanceof Map<?, ?> meta
-                && meta.containsKey(PROTOCOL_VERSION)) {
-            return modern(id, method, parameters, meta, streams);
+        if (isModern(parameters)) {
+            return modern(
+                    id,
+                    method,
+                    parameters,
+                    parameters.get("_meta") instanceof Map<?, ?> meta ? meta : Map.of(),
+                    streams);
         }
         return switch (method) {
             case "initialize" -> result(id, initialize(parameters));
@@ -165,16 +176,7 @@ public final class McpSession {
             return error(id, INVALID_PARAMS, PROTOCOL_VERSION + " must be a string");
         }
         if (!MODERN_VERSIONS.contains(requested)) {
-            final Map<String, Object> data = new LinkedHashMap<>();
-            data.put("supported", MODERN_VERSIONS);
-            data.put("requested", requested);
-            return error(
-                    id,
-                    UNSUPPORTED_PROTOCOL_VERSION,
-                    "This server speaks MCP "
-                            + String.join(", ", MODERN_VERSIONS)
-                            + " without a handshake",
-                    data);
+            return unsupported(id, requested);
         }
         if (!(meta.get(CLIENT_CAPABILITIES) instanceof Map<?, ?>)) {
             return error(id, INVALID_PARAMS, CLIENT_CAPABILITIES + " must be an object");
@@ -194,11 +196,53 @@ public final class McpSession {
         };
     }
 
-    private Map<String, Object> discover() {
+    /**
+     * Tells whether a request is of the second era: it names a version or the client's capabilities
+     * in {@code _meta}. A bare {@code server/discover} stays the first era's unknown method, which
+     * a client of both eras falls back on.
+     *
+     * @param params Its parameters, or {@code null} when there are none or they are no object.
+     * @return {@code true} for a request of {@code 2026-07-28} or another of that era.
+     */
+    static boolean isModern(@Nullable Map<?, ?> params) {
+        return params != null
+                && params.get("_meta") instanceof Map<?, ?> meta
+                && (meta.containsKey(PROTOCOL_VERSION) || meta.containsKey(CLIENT_CAPABILITIES));
+    }
+
+    /**
+     * Every version spoken, both eras, newest first.
+     *
+     * @return The versions.
+     */
+    static List<String> supportedVersions() {
         final List<String> supported = new java.util.ArrayList<>(MODERN_VERSIONS);
         supported.addAll(VERSIONS);
+        return List.copyOf(supported);
+    }
+
+    /**
+     * The refusal of a version not spoken, naming every version that is, so a client of both eras
+     * finds the first one there too.
+     *
+     * @param id The request's id, or {@code null} for a notification.
+     * @param requested The version asked.
+     * @return The error.
+     */
+    static String unsupported(@Nullable Object id, String requested) {
+        final Map<String, Object> data = new LinkedHashMap<>();
+        data.put("supported", supportedVersions());
+        data.put("requested", requested);
+        return error(
+                id,
+                UNSUPPORTED_PROTOCOL_VERSION,
+                "This server speaks MCP " + String.join(", ", supportedVersions()),
+                data);
+    }
+
+    private Map<String, Object> discover() {
         final Map<String, Object> result = new LinkedHashMap<>();
-        result.put("supportedVersions", supported);
+        result.put("supportedVersions", supportedVersions());
         result.put("capabilities", Map.of("tools", Map.of()));
         result.put("ttlMs", TTL_MS);
         result.put("cacheScope", "private");
