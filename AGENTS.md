@@ -2,7 +2,7 @@
 
 ## Shared across the Porelo repositories
 
-> **BEGIN Shared Area** · sha256 `34413dbf083b9fc7` · changed 2026-11-08T10:45Z
+> **BEGIN Shared Area** · sha256 `59acd5398f5eb693` · changed 2026-11-08T11:47Z
 
 Identical in every repository `project.yml` names but `porelo-parent`, which holds only the parent pom
 and no `AGENTS.md`. The markers carry the SHA-256 of the lines between them (the first 16 hex digits)
@@ -406,6 +406,9 @@ and the UTC time that text last changed; change it in the channel first, never i
   plugin, since JetBrains supports only Gradle - named with the reason in its repository's own part. A
   file that cannot be Java - `mvnw`, or a script that runs where there is no Java yet - is named in its
   repository's own part with the reason, and no repository keeps a copy of a helper another one has.
+  The one exception is `.github/actions/pinned-jdk/pinned.sh`, the rule for pinned downloads, which a
+  repository's `pinned-jdk` action copies unchanged from porelo-buildtools, since that step runs before
+  there is Java; `check-shared` refuses a copy that differs.
 - **Maven modules that belong together - the layers of one program, its packages - are submodules of
   one module of packaging `pom` named for what they share**, so the root lists parts, not pieces.
   Grouping changes only `parent` and `relativePath`, never a `groupId` or `artifactId`.
@@ -474,7 +477,7 @@ and the UTC time that text last changed; change it in the channel first, never i
   with `+`: estimates summed, the earliest start and the stack's readiness, VM time and tokens counted
   once.
 
-> **END Shared Area** · sha256 `34413dbf083b9fc7`
+> **END Shared Area** · sha256 `59acd5398f5eb693`
 
 ## What this repository is
 
