@@ -9,11 +9,6 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 |---|---|---|---|
 | <a id="mc01"></a>[MC01](MC01-The-MCP-SDK-Chosen-By-Measurement.md) | S | - | The MCP layer built on a Java MCP SDK or on a small layer of its own, chosen by measurement: a layer of its own, a third of the SDK's size and an eighth of its start. |
 | <a id="mc02"></a>[MC02](MC02-Tools-Generated-From-The-Daemon-s-Interface.md) | M | - | Every method the daemon describes in `Tasks1` an MCP tool, its schemas from the Varlink types, its answers and refusals the daemon's, tested against a stand-in daemon. |
-
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
 | <a id="mc03"></a>[MC03](MC03-MCP-Over-HTTP-On-A-Unix-Socket-For-A-Task.md) | M | - | `porelo-mcp serve` for one task: streamable HTTP on a `0600` Unix socket, the peer's uid checked, a bearer token from standard input, `ready` and the exit codes of the binding. |
 
 ## Backlog

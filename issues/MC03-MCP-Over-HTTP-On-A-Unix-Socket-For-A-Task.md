@@ -1,6 +1,6 @@
 # MC03 — MCP Over HTTP On A Unix Socket For A Task
 
-**Status:** Implementing
+**Status:** Review
 **Size:** M - the `serve` command against the binding in `doc/binding.md`, a contract porelo reads.
 
 **What must be true.** `porelo-mcp serve`, started by the daemon for one task, serves the tools over MCP streamable

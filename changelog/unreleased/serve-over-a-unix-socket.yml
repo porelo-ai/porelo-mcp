@@ -1,0 +1,2 @@
+title: Serve the tools to one task over MCP streamable HTTP on its own Unix socket, to the person's own user alone and only with the token the daemon gave it, with the start order and exit codes of the binding.
+type: added

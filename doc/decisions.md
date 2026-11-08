@@ -43,8 +43,8 @@ images with the pinned GraalVM and `-march=x86-64`:
     second request can hide behind the first;
   - a read deadline per connection, so a peer that stalls in the head or the body is closed, and connections are served
     apart, so one stalled peer holds up no other;
-  - the head at most 16 KiB and 64 header lines, counted while it is read; the body at most 1 MiB, checked against
-    `Content-Length` before anything is allocated;
+  - the head at most 16 KiB and 64 header lines, counted while it is read, else `431`; the body at most 1 MiB, checked
+    against `Content-Length` before anything is allocated, else `413`;
   - lines ended by `\r\n` only: a bare `\n`, a folded line, or white space before a header's `:` is refused;
   - refused with `400` and closed: any `Transfer-Encoding`; a missing, repeated, or not purely decimal `Content-Length`;
     a body shorter than `Content-Length`; a repeated `Authorization`;
