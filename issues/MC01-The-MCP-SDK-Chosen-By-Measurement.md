@@ -1,6 +1,6 @@
 # MC01 — The MCP SDK Chosen By Measurement
 
-**Status:** Implementing
+**Status:** Review
 **Size:** S - one spike and a measured comparison, no contract.
 
 **What must be true.** The MCP layer of `porelo-mcp` is built on a Java MCP SDK or on its own small JSON-RPC layer,
@@ -29,7 +29,3 @@ chosen by measurement, and the choice is written down with the numbers it rests 
 
 - `doc/decisions.md` names the choice, each measured number, and what would change the answer.
 - A candidate that needs a TCP socket, even on loopback, is out: the check above shows whether it does.
-
-## To be checked
-
-- Which MCP protocol versions the MCP clients of Claude Code, Codex and agy offer today, read from each.

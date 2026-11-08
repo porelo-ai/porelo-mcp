@@ -3,11 +3,11 @@
 The open tasks of `porelo-mcp`, grouped by state; the order within a group is the priority. The rules for an issue, and
 who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A group with nothing in it is left out.
 
-## Implementing
+## Review
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="mc01"></a>[MC01](MC01-The-MCP-SDK-Chosen-By-Measurement.md) | S | - | The MCP layer built on a Java MCP SDK or on a small layer of its own, chosen by measuring native size, start, dependencies and whether it serves HTTP on a Unix socket without TCP. |
+| <a id="mc01"></a>[MC01](MC01-The-MCP-SDK-Chosen-By-Measurement.md) | S | - | The MCP layer built on a Java MCP SDK or on a small layer of its own, chosen by measurement: a layer of its own, a third of the SDK's size and an eighth of its start. |
 
 ## Backlog
 

@@ -20,6 +20,8 @@ refusal are the daemon's, a refusal with its error name and parameters as they c
   reply is the tool's structured content and text. A `VarlinkException` becomes a tool result with `isError: true` and
   structured content `{"error": <full name>, "parameters": {...}}`. A name that is no tool is JSON-RPC `-32602`; a
   daemon that cannot be reached is JSON-RPC `-32603` naming the socket. No call carries `more: true`.
+- The MCP layer is its own, over `porelo-wire`'s `Json.parseDecimals`, as `doc/decisions.md` says: `initialize`,
+  `tools/list`, `tools/call` and `ping`, the `id` and every number passed on exactly as they came.
 - A stand-in daemon in the tests over `porelo-wire`'s `VarlinkServer`, described by a given interface. Where a test is
   about the contract, it serves the real `Tasks1` interface: from the published artifact that carries it, or until one
   does, the interface files taken from porelo's main at a named commit, that commit written beside them.
@@ -36,4 +38,7 @@ refusal are the daemon's, a refusal with its error name and parameters as they c
 
 ## To be checked
 
+- What the MCP version `2026-07-28` changes against `2025-11-25` for a server with tools only, read in its
+  specification: the clients of Claude Code, Codex and agy offer both, and `initialize` answers the newest both sides
+  speak.
 - Whether `porelo-wire` carries the `Tasks1` interface files as resources; until it does, the named commit's files.

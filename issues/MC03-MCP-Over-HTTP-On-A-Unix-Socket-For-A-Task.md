@@ -16,6 +16,10 @@ HTTP on its Unix socket, to the person's own user alone and only with the token 
 - On every accepted connection the peer's uid from `SO_PEERCRED` (`jdk.net.ExtendedSocketOptions`), read through an
   injectable reader as `porelo-wire`'s `VarlinkServer` does, is compared with the process's own; another uid is closed
   without an answer.
+- The HTTP reader holds every bound `doc/decisions.md` names for it: one request per connection, a read deadline,
+  connections served apart, the head at most 16 KiB and 64 lines, the body at most 1 MiB, strict `\r\n` lines, `400`
+  and close on `Transfer-Encoding`, on a missing, repeated or non-decimal `Content-Length`, on a short body and on a
+  repeated `Authorization`; `404` off `/mcp` and `405` for any method but `POST`, both only after the token.
 - Every HTTP request needs `Authorization: Bearer <token>`; the SHA-256 digests of the expected and the presented token
   are compared with `MessageDigest.isEqual`; otherwise `401` with no detail. The token is never logged.
 - Exit codes: 0 when stopped on `SIGTERM` or `SIGINT`, which close the socket and remove the path it bound itself; 1 when
@@ -24,13 +28,19 @@ HTTP on its Unix socket, to the person's own user alone and only with the token 
 - Red first, against a tool called by someone without the token: requests with no token and with a wrong token get
   `401`. Against another user's process: a connection whose peer reader answers another uid is closed without an HTTP
   answer, a valid token included. Against a socket other users can open: its mode is `0600`. Against clobbering
-  someone's file: a start onto an existing path exits 2 and leaves that path as it was.
+  someone's file: a start onto an existing path exits 2 and leaves that path as it was. Against a request smuggled
+  past the token: a second request behind the first on one connection is never answered, and a request carrying
+  `Transfer-Encoding` gets `400`. Against one peer stopping everyone: a connection that sends half a head and stalls is
+  closed after the deadline while another connection is answered meanwhile.
 
 ## Acceptance
 
 - Measured over a real Unix socket: no token, a wrong token, an empty bearer and a token one byte longer each get `401`;
   the right one lists the tools.
 - A peer of another uid gets no answer, even with the right token.
+- Each bound of the HTTP reader is seen to refuse, one test each: a head over 16 KiB or 64 lines, a body over 1 MiB, a
+  bare `\n`, a folded line, `Transfer-Encoding`, two `Content-Length`s, `Content-Length: +10`, a short body, two
+  `Authorization`s, a stalled peer; and without the token, `GET /other` gets `401`, not `404` or `405`.
 - Token input that is empty, ends before `\n`, holds a space or a control byte, is shorter than 32 bytes or longer than
   1023 exits 2 before any socket is bound.
 - No socket descriptor of the process (`/proc/self/fd`, `socket:[<inode>]`) is in `/proc/self/net/tcp` or `tcp6` while
