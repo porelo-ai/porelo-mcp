@@ -1,6 +1,6 @@
 # MC02 — Tools Generated From The Daemon's Interface
 
-**Status:** Backlog; blocked by [MC01](README.md#mc01).
+**Status:** Implementing
 **Size:** M - a Varlink interface parser, the schema mapping and the call path, with a stand-in daemon for the tests.
 
 **What must be true.** An agent sees every method the daemon describes in `org.fuin.porelo.Tasks1` as an MCP tool with
