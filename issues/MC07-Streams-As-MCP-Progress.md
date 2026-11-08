@@ -1,6 +1,6 @@
 # MC07 — Streams As MCP Progress
 
-**Status:** Implementing
+**Status:** Review
 **Size:** M - streams over stdio first, a thread per streamed call, and cancelling; HTTP once the per-task side passes them.
 
 **What must be true.** A method of the daemon that answers only as a stream, such as watching the tasks or following a
@@ -26,4 +26,7 @@ log, can be called as a tool, its replies reaching the agent as MCP progress unt
   answered; the 65th stream at once is refused. Each seen red once.
 - Over HTTP: each reply an event as it comes, the result the last, then the connection's end; a client without
   `text/event-stream` gets one answer; a closed connection and a cancel on another connection each end the daemon's
-  call, without an answer; a stream outlives the connection's deadline. Each seen red once.
+  call, without an answer; a stream outlives the connection's deadline; a stream cancelled before its first reply has
+  answered `200`; a second stream under an id streaming on another connection is refused; a cancel lets go of a
+  stream whose client stopped reading; a cancel just before its call ends it; `1` and `1.0` are one id, `"1"` another;
+  `Accept` read by its media ranges. Each seen red once.

@@ -166,8 +166,120 @@ class HttpStreamsTest {
 
             assertThat(cancelled).as("the cancel taken").startsWith("HTTP/1.1 202 ");
             assertThat(gone.await(10, TimeUnit.SECONDS)).as("the daemon's call ended").isTrue();
-            assertThat(rest).as("no answer after the cancel").doesNotContain("\"result\"");
+            assertThat(rest).as("nothing after the cancel, no result and no error").isEmpty();
         }
+    }
+
+    // Harm: a cancel before the first reply leaving the client an answer without a status line.
+    @Test
+    void aStreamCancelledBeforeItsFirstReplyHasAnsweredTwoHundredAlready() throws Exception {
+        CountDownLatch gone = new CountDownLatch(1);
+        start(
+                Map.of(
+                        "Watch",
+                        (parameters, replies) -> {
+                            while (replies.open()) {
+                                try {
+                                    Thread.sleep(20);
+                                } catch (InterruptedException ex) {
+                                    Thread.currentThread().interrupt();
+                                    return;
+                                }
+                            }
+                            gone.countDown();
+                        }));
+
+        try (SocketChannel client = connect()) {
+            send(client, call(3, "Watch", "w"), true);
+            InputStream in = Channels.newInputStream(client);
+            String head = head(in);
+            try (SocketChannel other = connect()) {
+                send(
+                        other,
+                        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\","
+                                + "\"params\":{\"requestId\":3}}",
+                        false);
+                Channels.newInputStream(other).readAllBytes();
+            }
+
+            assertThat(head).as("answered at once").startsWith("HTTP/1.1 200 ");
+            assertThat(gone.await(10, TimeUnit.SECONDS)).as("the daemon's call ended").isTrue();
+            assertThat(in.readAllBytes()).as("and nothing after it").isEmpty();
+        }
+    }
+
+    // Harm: two clients of one socket streaming under one id, one of them out of a cancel's reach.
+    @Test
+    void aSecondStreamUnderAnIdStreamingOnAnotherConnectionIsRefused() throws Exception {
+        start(Map.of("Watch", endless(new CountDownLatch(1))));
+
+        try (SocketChannel first = connect();
+                SocketChannel second = connect()) {
+            send(first, call(9, "Watch", "a"), true);
+            InputStream in = Channels.newInputStream(first);
+            head(in);
+            event(in);
+            send(second, call(9, "Watch", "b"), true);
+            String refused =
+                    new String(
+                            Channels.newInputStream(second).readAllBytes(), StandardCharsets.UTF_8);
+
+            assertThat(refused).as("one answer, refused").contains("\"code\":-32600");
+        }
+    }
+
+    // Harm: a stream whose client stopped reading holding its connection's place for good, even
+    // after a cancel.
+    @Test
+    void aCancelLetsGoOfAStreamWhoseClientStoppedReading() throws Exception {
+        String line = "x".repeat(64 * 1024);
+        start(
+                Map.of(
+                        "Tail",
+                        (parameters, replies) -> {
+                            while (replies.open()) {
+                                replies.more(Map.of("line", line));
+                            }
+                        }));
+
+        // The accept loop holds a place while it waits; what is free when idle is the measure.
+        Thread.sleep(300);
+        int idle = server.freePlaces();
+        try (SocketChannel client = connect()) {
+            send(client, call(4, "Tail", "t"), true);
+            // Not read: the server's writes fill the socket and block.
+            Thread.sleep(1_000);
+            try (SocketChannel other = connect()) {
+                send(
+                        other,
+                        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\","
+                                + "\"params\":{\"requestId\":4}}",
+                        false);
+                Channels.newInputStream(other).readAllBytes();
+            }
+            boolean freed = false;
+            for (int i = 0; i < 100 && !freed; i++) {
+                freed = server.freePlaces() == idle;
+                Thread.sleep(50);
+            }
+
+            assertThat(freed).as("every place free again, the client still not reading").isTrue();
+        }
+    }
+
+    // Harm: a client that refuses an event stream given one, or one that takes it refused.
+    @Test
+    void acceptTakesAnEventStreamByItsMediaRangeAlone() {
+        assertThat(McpHttpServer.takesEvents("application/json, text/event-stream")).isTrue();
+        assertThat(McpHttpServer.takesEvents("Text/Event-Stream")).as("any case").isTrue();
+        assertThat(McpHttpServer.takesEvents("text/event-stream;q=0.5")).isTrue();
+        assertThat(McpHttpServer.takesEvents("text/event-stream; q=0")).as("refused").isFalse();
+        assertThat(McpHttpServer.takesEvents("text/event-stream;q=0.000")).as("refused").isFalse();
+        assertThat(McpHttpServer.takesEvents("text/event-stream-v2")).as("another type").isFalse();
+        assertThat(McpHttpServer.takesEvents("application/json;profile=\"text/event-stream\""))
+                .as("a parameter")
+                .isFalse();
+        assertThat(McpHttpServer.takesEvents(null)).isFalse();
     }
 
     // Harm: every stream cut off after the connection's deadline, which bounds only the request.

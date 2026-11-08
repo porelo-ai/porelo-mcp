@@ -13,12 +13,13 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | <a id="mc05"></a>[MC05](MC05-Whether-It-Reaches-The-Daemon.md) | S | - | `porelo-mcp --check` says whether it reaches the daemon, with its version and the methods offered. |
 | <a id="mc04"></a>[MC04](MC04-Stdio-For-A-Person-s-Own-Client.md) | S | - | `porelo-mcp stdio` for a person's own MCP client on the host: the reading methods, writing ones only from the person's own list, destructive ones never. |
 | <a id="mc08"></a>[MC08](MC08-MCP-2026-07-28-Spoken.md) | M | - | A client that offers only MCP `2026-07-28` reaches the tools, over stdio and HTTP. |
+| <a id="mc07"></a>[MC07](MC07-Streams-As-MCP-Progress.md) | M | - | A method that answers only as a stream callable as a tool, its replies as MCP progress. |
 
-## Implementing
+## Idea
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="mc07"></a>[MC07](MC07-Streams-As-MCP-Progress.md) | M | - | A method that answers only as a stream callable as a tool, its replies as MCP progress. |
+| <a id="mc09"></a>[MC09](MC09-A-Start-s-Result-As-The-Tool-s-Text.md) | - | - | A `Start` with a prompt shows the run's result as the tool's text, once porelo's B515 gives it. |
 
 ## Finished
 

@@ -1,51 +1,64 @@
 package org.fuin.porelo.mcp;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
- * The streamed calls of one session that are still running, each on a thread of its own, so the
- * session reads on: the next request, and the cancel that ends one of them.
+ * The streamed calls of one transport that are still running, each on a thread of its own, so the
+ * session reads on: the next request, and the cancel that ends one of them. Over stdio one {@code
+ * Streams} serves the whole session; over HTTP each connection has one, and all of a socket's share
+ * one {@link Registry}, so a cancel on one connection finds a stream on another.
  */
 final class Streams implements AutoCloseable {
 
-    /** The most streams one session runs at once; one more is refused, not queued. */
+    /** The most streams that run at once; one more is refused, not queued. */
     static final int MAX_STREAMS = 64;
 
     private final Predicate<String> out;
-    private final Consumer<Object> elsewhere;
+    private final Registry registry;
     private final boolean carries;
-    private final Map<String, Cancellation> running = new ConcurrentHashMap<>();
-    private final List<Thread> threads = new ArrayList<>();
+    private final Runnable onStart;
+    private final Runnable onCancel;
+    private final Set<Cancellation> here = ConcurrentHashMap.newKeySet();
+    private final Set<Thread> threads = ConcurrentHashMap.newKeySet();
     private volatile boolean started;
 
     /**
-     * Streams whose messages go out one whole message at a time, all on one transport.
+     * The streams of one transport that carries them all, as stdio does.
      *
      * @param out Writes one message and says whether it went out; called from several threads, each
      *     call whole. A message that did not go out ends every stream: nobody reads them any more.
      */
     Streams(Predicate<String> out) {
-        this(out, id -> {}, true);
+        this(out, new Registry(), true, () -> {}, () -> {});
     }
 
     /**
-     * Streams of one request among others, as over HTTP, where a cancel may come on another
-     * connection than the stream it names.
+     * The streams of one request among others, as over HTTP.
      *
      * @param out As above.
-     * @param elsewhere Cancels the streams of the other requests that run under an id.
+     * @param registry What the streams of all requests share: ids, the bound, cancels.
      * @param carries Whether this transport can carry a stream; when not, a call is answered once.
+     * @param onStart Run once, before the first stream's thread starts: the answer's head, say.
+     * @param onCancel Run when a stream here is cancelled, besides closing its daemon connection.
      */
-    Streams(Predicate<String> out, Consumer<Object> elsewhere, boolean carries) {
+    Streams(
+            Predicate<String> out,
+            Registry registry,
+            boolean carries,
+            Runnable onStart,
+            Runnable onCancel) {
         this.out = out;
-        this.elsewhere = elsewhere;
+        this.registry = registry;
         this.carries = carries;
+        this.onStart = onStart;
+        this.onCancel = onCancel;
     }
 
     /**
@@ -77,13 +90,14 @@ final class Streams implements AutoCloseable {
             written = out.test(message);
         }
         if (!written) {
-            running.values().forEach(Cancellation::cancel);
+            cancelAll();
         }
     }
 
     /**
-     * Sends one message of a streamed call, unless that call was cancelled: checked under the same
-     * lock as the write, so nothing of a call goes out after the reader saw its cancel.
+     * Sends one message of a streamed call, unless that call was cancelled. The check is made under
+     * the write's lock, so a cancel seen before a message is written stops it; one that arrives
+     * while a message is being written does not unsend it, which MCP allows.
      *
      * @param cancellation The call's.
      * @param message One JSON-RPC message.
@@ -97,67 +111,60 @@ final class Streams implements AutoCloseable {
             written = out.test(message);
         }
         if (!written) {
-            running.values().forEach(Cancellation::cancel);
+            cancelAll();
         }
     }
 
     /**
-     * Runs a streamed call, unless as many run already.
+     * Runs a streamed call, unless as many run already or one runs under the same id. A cancel that
+     * named the id a moment before is not lost: the call starts cancelled, and ends at once.
      *
      * @param id The request's id, which a cancel names.
      * @param body The call, given what cancels it.
-     * @return {@code false} when the bound is reached, or a stream of this id runs still, and
-     *     nothing was started.
+     * @return {@code false} when nothing was started.
      */
     synchronized boolean start(Object id, Consumer<Cancellation> body) {
-        threads.removeIf(thread -> !thread.isAlive());
         final String key = key(id);
-        // One per id: a second would be one a cancel cannot name, and one the bound does not count.
-        if (running.size() >= MAX_STREAMS || running.containsKey(key)) {
+        final Cancellation cancellation = new Cancellation();
+        if (!registry.reserve(key, cancellation)) {
             return false;
         }
-        final Cancellation cancellation = new Cancellation();
-        running.put(key, cancellation);
-        started = true;
-        threads.add(
+        here.add(cancellation);
+        cancellation.onCancel(onCancel);
+        if (!started) {
+            started = true;
+            onStart.run();
+        }
+        final Thread thread =
                 Thread.ofVirtual()
                         .name("mcp-stream")
-                        .start(
+                        .unstarted(
                                 () -> {
                                     try {
                                         body.accept(cancellation);
                                     } finally {
-                                        running.remove(key, cancellation);
+                                        registry.release(key, cancellation);
+                                        here.remove(cancellation);
+                                        threads.remove(Thread.currentThread());
                                     }
-                                }));
+                                });
+        threads.add(thread);
+        thread.start();
         return true;
     }
 
     /**
-     * Cancels the streamed call of a request, if it still runs.
+     * Cancels the streamed call of a request, wherever it runs on this registry.
      *
      * @param id The id the cancel names.
      */
     void cancel(Object id) {
-        cancelHere(id);
-        elsewhere.accept(id);
+        registry.cancel(key(id));
     }
 
-    /**
-     * Cancels the streamed call of a request here only, if it still runs.
-     *
-     * @param id The id the cancel names.
-     */
-    void cancelHere(Object id) {
-        final Cancellation cancellation = running.get(key(id));
-        if (cancellation != null) {
-            cancellation.cancel();
-        }
-    }
-
-    /** Cancels every call still running here, without waiting. */
+    /** Cancels every call started here and still running, without waiting. */
     void cancelAll() {
-        running.values().forEach(Cancellation::cancel);
+        here.forEach(Cancellation::cancel);
     }
 
     /**
@@ -166,36 +173,88 @@ final class Streams implements AutoCloseable {
      * @throws InterruptedException When interrupted while waiting.
      */
     void awaitAll() throws InterruptedException {
-        final List<Thread> left;
-        synchronized (this) {
-            left = List.copyOf(threads);
-        }
-        for (final Thread thread : left) {
+        for (final Thread thread : List.copyOf(threads)) {
             thread.join();
         }
     }
 
     /**
-     * Cancels every call still running, at the session's end, and waits a moment for each.
+     * Cancels every call started here, at the session's end, and waits a moment for each.
      *
      * @throws InterruptedException When interrupted while waiting.
      */
     @Override
     public void close() throws InterruptedException {
-        running.values().forEach(Cancellation::cancel);
-        final List<Thread> left;
-        synchronized (this) {
-            left = List.copyOf(threads);
-        }
-        for (final Thread thread : left) {
+        cancelAll();
+        for (final Thread thread : List.copyOf(threads)) {
             thread.join(5_000);
         }
     }
 
     /** The same id as a string and as a number are two ids; 1 and 1.0 are one. */
-    private static String key(Object id) {
+    static String key(Object id) {
         return id instanceof Number number
                 ? "n:" + new BigDecimal(number.toString()).stripTrailingZeros().toPlainString()
                 : "s:" + id;
+    }
+
+    /**
+     * What the streams of one socket share: the calls running under each id, the bound on them, and
+     * the cancels that came a moment before their call.
+     */
+    static final class Registry {
+
+        /** How long a cancel naming no running call waits for that call to start. */
+        private static final long EARLY_NANOS = 10_000_000_000L;
+
+        private final Map<String, Cancellation> running = new ConcurrentHashMap<>();
+        private final Map<String, Long> early = new LinkedHashMap<>();
+        private boolean shut;
+
+        synchronized boolean reserve(String key, Cancellation cancellation) {
+            if (shut || running.size() >= MAX_STREAMS || running.containsKey(key)) {
+                return false;
+            }
+            running.put(key, cancellation);
+            final Long cancelledAt = early.remove(key);
+            if (cancelledAt != null && System.nanoTime() - cancelledAt < EARLY_NANOS) {
+                cancellation.cancel();
+            }
+            return true;
+        }
+
+        void release(String key, Cancellation cancellation) {
+            running.remove(key, cancellation);
+        }
+
+        void cancel(String key) {
+            final Cancellation cancellation;
+            synchronized (this) {
+                cancellation = running.get(key);
+                if (cancellation == null) {
+                    remember(key);
+                    return;
+                }
+            }
+            cancellation.cancel();
+        }
+
+        /** Cancels everything running and starts nothing more: the socket is closing. */
+        void shut() {
+            synchronized (this) {
+                shut = true;
+            }
+            running.values().forEach(Cancellation::cancel);
+        }
+
+        private void remember(String key) {
+            final long now = System.nanoTime();
+            early.values().removeIf(at -> now - at >= EARLY_NANOS);
+            early.remove(key);
+            early.put(key, now);
+            while (early.size() > MAX_STREAMS) {
+                early.remove(early.keySet().iterator().next());
+            }
+        }
     }
 }

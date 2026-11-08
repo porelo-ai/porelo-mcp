@@ -1,45 +1,49 @@
 package org.fuin.porelo.mcp;
 
-import org.jspecify.annotations.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Whether a streamed call was cancelled, and what ends it then: the daemon connection it reads,
- * which a stream that sends only on a change would otherwise hold until its next reply.
+ * which a stream that sends only on a change would otherwise hold until its next reply, and over
+ * HTTP the client's connection, which a write the client no longer reads would otherwise hold.
  */
 final class Cancellation {
 
     private boolean cancelled;
-    private @Nullable Runnable onCancel;
+    private final List<Runnable> onCancel = new ArrayList<>();
 
     /**
-     * Names what ends the call; run at once when it is cancelled already.
+     * Adds what ends the call; run at once when it is cancelled already.
      *
      * @param action What ends it.
      */
     void onCancel(Runnable action) {
         final boolean now;
         synchronized (this) {
-            onCancel = action;
             now = cancelled;
+            if (!now) {
+                onCancel.add(action);
+            }
         }
         if (now) {
             action.run();
         }
     }
 
-    /** Cancels the call, once; later calls do nothing. */
+    /** Cancels the call, once, running every action added; later calls do nothing. */
     void cancel() {
-        final @Nullable Runnable action;
+        final List<Runnable> actions;
         synchronized (this) {
             if (cancelled) {
                 return;
             }
             cancelled = true;
-            action = onCancel;
+            actions = List.copyOf(onCancel);
+            onCancel.clear();
         }
-        if (action != null) {
-            action.run();
-        }
+        // Outside the lock: an action may block a moment, closing a socket.
+        actions.forEach(Runnable::run);
     }
 
     /**

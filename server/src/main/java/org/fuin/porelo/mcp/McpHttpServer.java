@@ -48,9 +48,10 @@ public final class McpHttpServer implements AutoCloseable {
     private volatile boolean closed;
 
     /**
-     * The streams of the requests being answered, so a cancel on one connection finds another's.
+     * The streams of every connection, so the id rule and the bound hold for the socket, and a
+     * cancel on one connection finds a stream on another.
      */
-    private final java.util.Set<Streams> live = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Streams.Registry streaming = new Streams.Registry();
 
     /**
      * Binds the socket with mode {@code 0600}.
@@ -168,7 +169,8 @@ public final class McpHttpServer implements AutoCloseable {
                     answer(
                             Channels.newInputStream(client),
                             Channels.newOutputStream(client),
-                            () -> timeout.cancel(false));
+                            () -> timeout.cancel(false),
+                            () -> closeQuietly(client));
             client.shutdownOutput();
             if (!streamed) {
                 discardArrived(client);
@@ -183,7 +185,8 @@ public final class McpHttpServer implements AutoCloseable {
      *
      * @return {@code true} when it was answered as a stream, whose watcher still reads the input.
      */
-    private boolean answer(InputStream in, OutputStream out, Runnable endDeadline)
+    private boolean answer(
+            InputStream in, OutputStream out, Runnable endDeadline, Runnable closeClient)
             throws IOException {
         final HttpRequestHead head;
         try {
@@ -217,56 +220,84 @@ public final class McpHttpServer implements AutoCloseable {
             respond(out, 400, era.refusal());
             return false;
         }
-        final String accept = head.header("accept");
         final EventStream events = new EventStream(out);
         final Streams streams =
                 new Streams(
                         events::send,
-                        this::cancelEverywhere,
-                        accept != null && accept.contains("text/event-stream"));
-        live.add(streams);
-        try {
-            final String answered = session.handle(message, streams);
-            if (streams.started()) {
-                // The deadline bounds the request; a stream runs until it ends or is cancelled.
-                endDeadline.run();
-                // A client that closes its end has stopped reading: that ends the stream.
-                Thread.ofVirtual()
-                        .name("mcp-stream-watch")
-                        .start(
-                                () -> {
-                                    try {
-                                        while (in.read() != -1) {
-                                            // Nothing more is read for this request.
-                                        }
-                                    } catch (IOException ex) {
-                                        // Closed: the same.
+                        streaming,
+                        takesEvents(head.header("accept")),
+                        // The head goes out as the stream starts, before its first reply.
+                        events::head,
+                        // A cancel also lets go of a write the client no longer reads.
+                        closeClient);
+        final String answered = session.handle(message, streams);
+        if (streams.started()) {
+            // The deadline bounds the request and a single answer; a stream runs until it ends or
+            // is cancelled.
+            endDeadline.run();
+            // A client that closes its end - or half-closes it, which MCP clients do not - has
+            // stopped the stream. Bytes beyond the request are read away, up to a bound.
+            Thread.ofVirtual()
+                    .name("mcp-stream-watch")
+                    .start(
+                            () -> {
+                                try {
+                                    final byte[] buffer = new byte[8192];
+                                    int left = DISCARDED;
+                                    int read;
+                                    while (left > 0 && (read = in.read(buffer)) != -1) {
+                                        left -= read;
                                     }
-                                    streams.cancelAll();
-                                });
-                try {
-                    streams.awaitAll();
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                    streams.cancelAll();
-                }
-                return true;
+                                } catch (IOException ex) {
+                                    // Closed: the same.
+                                }
+                                streams.cancelAll();
+                            });
+            try {
+                streams.awaitAll();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                streams.cancelAll();
             }
-            if (answered == null) {
-                respond(out, 202, null);
-            } else {
-                respond(out, era.modern() && Era.refusesTheRequest(answered) ? 400 : 200, answered);
-            }
-            return false;
-        } finally {
-            live.remove(streams);
+            return true;
         }
+        if (answered == null) {
+            respond(out, 202, null);
+        } else {
+            respond(out, era.modern() && Era.refusesTheRequest(answered) ? 400 : 200, answered);
+        }
+        return false;
     }
 
-    private void cancelEverywhere(Object id) {
-        for (final Streams each : live) {
-            each.cancelHere(id);
+    /**
+     * Whether an {@code Accept} header takes {@code text/event-stream}: one of its media ranges is
+     * that type, in any case, without {@code q=0}.
+     *
+     * @param accept The header, or {@code null}.
+     * @return Whether a stream may be answered.
+     */
+    static boolean takesEvents(@Nullable String accept) {
+        if (accept == null) {
+            return false;
         }
+        for (final String range : accept.split(",")) {
+            final String[] parts = range.split(";");
+            if (!parts[0].strip().equalsIgnoreCase("text/event-stream")) {
+                continue;
+            }
+            boolean refused = false;
+            for (int i = 1; i < parts.length; i++) {
+                final String parameter = parts[i].strip().toLowerCase(java.util.Locale.ROOT);
+                if (parameter.startsWith("q=")
+                        && parameter.substring(2).strip().matches("0(\\.0{0,3})?")) {
+                    refused = true;
+                }
+            }
+            if (!refused) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -282,15 +313,26 @@ public final class McpHttpServer implements AutoCloseable {
             this.out = out;
         }
 
-        synchronized boolean send(String json) {
+        /** Writes the head, once; a stream cancelled before its first reply still answers 200. */
+        synchronized void head() {
+            if (headWritten) {
+                return;
+            }
+            headWritten = true;
             try {
-                if (!headWritten) {
-                    out.write(
-                            ("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
-                                            + "Cache-Control: no-store\r\nConnection: close\r\n\r\n")
-                                    .getBytes(StandardCharsets.US_ASCII));
-                    headWritten = true;
-                }
+                out.write(
+                        ("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                                        + "Cache-Control: no-store\r\nConnection: close\r\n\r\n")
+                                .getBytes(StandardCharsets.US_ASCII));
+                out.flush();
+            } catch (IOException ex) {
+                // The client is gone; the first event's write says so to the stream.
+            }
+        }
+
+        synchronized boolean send(String json) {
+            head();
+            try {
                 // Json.write escapes every line break inside a string, so one message is one line.
                 out.write(("data: " + json + "\n\n").getBytes(StandardCharsets.UTF_8));
                 out.flush();
@@ -368,6 +410,11 @@ public final class McpHttpServer implements AutoCloseable {
         }
     }
 
+    /** How many connections could be served now, of {@link #MAX_CONNECTIONS}. */
+    int freePlaces() {
+        return places.availablePermits();
+    }
+
     /** How many deadlines are queued, for connections not yet done. */
     int pendingDeadlines() {
         return closer.getQueue().size();
@@ -381,7 +428,7 @@ public final class McpHttpServer implements AutoCloseable {
             return;
         }
         closed = true;
-        live.forEach(Streams::cancelAll);
+        streaming.shut();
         // The path goes first, so serve() cannot return - and the process exit - before it is gone.
         try {
             Files.deleteIfExists(socket);
