@@ -1,6 +1,6 @@
 # MC08 — MCP 2026-07-28 Spoken
 
-**Status:** Review
+**Status:** Finished
 **Size:** M - a second era beside the first in the session, `server/discover`, and the HTTP headers checked against the body.
 
 **What must be true.** An MCP client that offers only the version `2026-07-28` reaches the daemon's tools through
