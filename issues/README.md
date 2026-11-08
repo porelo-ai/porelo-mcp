@@ -3,12 +3,6 @@
 The open tasks of `porelo-mcp`, grouped by state; the order within a group is the priority. The rules for an issue, and
 who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A group with nothing in it is left out.
 
-## Backlog
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="mc09"></a>[MC09](MC09-A-Start-s-Result-As-The-Tool-s-Text.md) | S | porelo B515 | A `Start` with a prompt shows the run's result as the tool's text, once porelo's B515 gives it. |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -18,6 +12,7 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | <a id="mc03"></a>[MC03](MC03-MCP-Over-HTTP-On-A-Unix-Socket-For-A-Task.md) | M | - | `porelo-mcp serve` for one task: streamable HTTP on a `0600` Unix socket, the peer's uid checked, a bearer token from standard input, `ready` and the exit codes of the binding. |
 | <a id="mc05"></a>[MC05](MC05-Whether-It-Reaches-The-Daemon.md) | S | - | `porelo-mcp --check` says whether it reaches the daemon, with its version and the methods offered. |
 | <a id="mc04"></a>[MC04](MC04-Stdio-For-A-Person-s-Own-Client.md) | S | - | `porelo-mcp stdio` for a person's own MCP client on the host: the reading methods, writing ones only from the person's own list, destructive ones never. |
+| <a id="mc09"></a>[MC09](MC09-A-Start-s-Result-As-The-Tool-s-Text.md) | S | - | A `Start` with a prompt shows the run's result as the tool's text, once porelo's B515 gives it. |
 
 ## Idea
 

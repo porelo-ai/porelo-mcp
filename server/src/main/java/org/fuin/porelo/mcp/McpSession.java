@@ -24,6 +24,13 @@ public final class McpSession {
      * The MCP versions of the second era, which has no handshake: each request names its version
      * and the client's capabilities in {@code _meta}.
      */
+    /** A reply's field holding what the run answered, and the two that say what it is. */
+    private static final String RESULT = "result";
+
+    private static final String RESULT_KIND = "resultKind";
+
+    private static final String RESULT_CUT = "resultCut";
+
     static final List<String> MODERN_VERSIONS = List.of("2026-07-28");
 
     /** MCP's code for a request naming a version this server does not speak. */
@@ -388,10 +395,39 @@ public final class McpSession {
     private Map<String, Object> toolResult(
             Map<String, Object> content, boolean isError, boolean modern) {
         final Map<String, Object> result = new LinkedHashMap<>();
-        result.put("content", List.of(Map.of("type", "text", "text", Json.write(content))));
+        result.put("content", isError ? List.of(text(Json.write(content))) : texts(content));
         result.put("structuredContent", content);
         result.put("isError", isError);
         return modern ? complete(result) : result;
+    }
+
+    /**
+     * The texts of a reply: one of the whole reply, or, when it carries the run's {@code result},
+     * that result first, said for what it is, and the rest of the reply after it. By the field and
+     * not by the method: the daemon's contract says what {@code result} is, wherever it stands.
+     */
+    private static List<Map<String, Object>> texts(Map<String, Object> reply) {
+        if (!(reply.get(RESULT) instanceof String said)) {
+            return List.of(text(Json.write(reply)));
+        }
+        final StringBuilder shown = new StringBuilder();
+        final Object kind = reply.get(RESULT_KIND);
+        if ("LAST_LINES".equals(kind)) {
+            shown.append("The run gave no answer; these are its last lines:\n");
+        } else if (kind != null && !"ANSWER".equals(kind)) {
+            shown.append("The result is of the kind ").append(kind).append(":\n");
+        }
+        shown.append(said);
+        if (Boolean.TRUE.equals(reply.get(RESULT_CUT))) {
+            shown.append("\n[cut: the result was longer than 16 KiB]");
+        }
+        final Map<String, Object> rest = new LinkedHashMap<>(reply);
+        rest.keySet().removeAll(List.of(RESULT, RESULT_KIND, RESULT_CUT));
+        return List.of(text(shown.toString()), text(Json.write(rest)));
+    }
+
+    private static Map<String, Object> text(String text) {
+        return Map.of("type", "text", "text", text);
     }
 
     private static String result(Object id, Map<String, Object> result) {

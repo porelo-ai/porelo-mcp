@@ -59,6 +59,11 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 - A Varlink error reaches the agent as an MCP tool result with `isError: true`. Its structured content is
   `{"error": "<the error's full name>", "parameters": {<the error's parameters as they came>}}`, and its text holds the
   same.
+- A reply's structured content is the reply as it came, and its text is the same as JSON. A reply that carries the run's
+  `result` as a string, as `Start`'s last one does, gets two texts instead: first the result, after a line saying it is
+  no answer when `resultKind` is `LAST_LINES` (or naming a kind this build does not know), and before a line saying it
+  was cut when `resultCut` is true; then the rest of the reply as JSON, without those three fields. The field decides,
+  not the method, so `porelo-mcp` keeps no list of methods.
 - A name that is no tool is a JSON-RPC error (`-32602`). A call the daemon cannot be reached for, because its socket is
   gone or the connection broke, is a JSON-RPC error (`-32603`) naming the socket; the process does not exit for it.
 - A call without a progress token, or from a client that takes no event stream, is made without `more: true`. A method

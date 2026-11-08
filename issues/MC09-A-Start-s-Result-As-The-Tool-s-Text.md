@@ -1,9 +1,8 @@
 # MC09 — A Start's Result As The Tool's Text
 
-**Status:** Backlog. Set by the operator on 2026-11-08: red tests as soon as B515's contract stands, built once B515
-is on porelo's main.
+**Status:** Review
 **Size:** S - the tool's text of a reply that carries `result`; no new method, no new rule.
-**Blocked by:** porelo's B515, for the build. The red tests are written against its plan.
+**Blocked by:** porelo's B515, on porelo's main as `0cc6e7a55`; its names are as planned.
 
 **What must be true.** An agent that calls `Start` with a prompt reads what the run answered in the tool's text,
 without knowing to call `Tail` or `Logs` after it.
@@ -41,4 +40,4 @@ The operator's test of 2026-11-08 started a task with a prompt over stdio from a
   - a reply without a result is one text;
   - a streamed start ends with the answer as its text.
 
-  Each was seen red before the build. A reply without a result guards what stays.
+  Five were seen red before the build. The sixth, a reply without a result, guards what stays.
