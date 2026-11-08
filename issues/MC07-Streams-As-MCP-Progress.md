@@ -1,6 +1,6 @@
 # MC07 — Streams As MCP Progress
 
-**Status:** Review
+**Status:** Finished
 **Size:** M - streams over stdio first, a thread per streamed call, and cancelling; HTTP once the per-task side passes them.
 
 **What must be true.** A method of the daemon that answers only as a stream, such as watching the tasks or following a
