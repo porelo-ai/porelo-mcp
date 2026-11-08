@@ -1,6 +1,6 @@
 # MC06 — The Native Executable In Its DEB And RPM Packages
 
-**Status:** Implementing
+**Status:** Review
 **Size:** M - the native build, two packages and their publication in the build workflow.
 
 **What must be true.** `porelo-mcp` installs from Porelo's package channels as a native executable, in a DEB and an RPM
