@@ -61,8 +61,8 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
   same.
 - A name that is no tool is a JSON-RPC error (`-32602`). A call the daemon cannot be reached for, because its socket is
   gone or the connection broke, is a JSON-RPC error (`-32603`) naming the socket; the process does not exit for it.
-- A call without a progress token, and every call over a task's socket, is made without `more: true`. A method that needs
-  a stream gets the daemon's own `StreamRequired` then, passed on as any other error.
+- A call without a progress token, or from a client that takes no event stream, is made without `more: true`. A method
+  that needs a stream gets the daemon's own `StreamRequired` then, passed on as any other error.
 
 ## MCP versions
 
@@ -125,7 +125,8 @@ client may use either.
 
 ### Streams
 
-- A call over stdio that carries `_meta.progressToken` calls the method with Varlink's `more`. Each reply goes to the
+- A call over stdio, or over a task's socket from a client whose `Accept` names `text/event-stream`, that carries
+  `_meta.progressToken` calls the method with Varlink's `more`. Each reply goes to the
   client at once as `notifications/progress`, with that token, a `progress` counting from 1, and the reply as JSON text
   in `message`. When the daemon ends the stream, its last reply is also the tool's result.
 - Without a progress token a call is answered once, as the daemon answers a call without `more`. A method that answers
@@ -135,7 +136,12 @@ client may use either.
   is in its progress notifications.
 - At most 64 streams run at once in one stdio session, and only one per request id; one more, or a second one under an
   id still streaming, is refused at once with JSON-RPC error `-32600`. When standard output fails, every stream ends.
-- Over a task's socket a call is answered once, progress token or not.
+- Over a task's socket such a call is answered `200` with `Content-Type: text/event-stream`: each message, the progress
+  and then the result, one `data:` line and an empty line, and the connection's end the stream's end. The
+  connection's deadline bounds the request alone, not the stream. A client that closes the connection has cancelled
+  the stream; `notifications/cancelled` on another connection cancels it by its request id. A client whose `Accept`
+  does not name `text/event-stream` gets one answer, as without a token. Each connection holds one request, so at most
+  64 run at once, streams among them.
 
 ## Checking it
 

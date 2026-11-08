@@ -18,17 +18,52 @@ final class Streams implements AutoCloseable {
     static final int MAX_STREAMS = 64;
 
     private final Predicate<String> out;
+    private final Consumer<Object> elsewhere;
+    private final boolean carries;
     private final Map<String, Cancellation> running = new ConcurrentHashMap<>();
     private final List<Thread> threads = new ArrayList<>();
+    private volatile boolean started;
 
     /**
-     * Streams whose messages go out one whole message at a time.
+     * Streams whose messages go out one whole message at a time, all on one transport.
      *
      * @param out Writes one message and says whether it went out; called from several threads, each
      *     call whole. A message that did not go out ends every stream: nobody reads them any more.
      */
     Streams(Predicate<String> out) {
+        this(out, id -> {}, true);
+    }
+
+    /**
+     * Streams of one request among others, as over HTTP, where a cancel may come on another
+     * connection than the stream it names.
+     *
+     * @param out As above.
+     * @param elsewhere Cancels the streams of the other requests that run under an id.
+     * @param carries Whether this transport can carry a stream; when not, a call is answered once.
+     */
+    Streams(Predicate<String> out, Consumer<Object> elsewhere, boolean carries) {
         this.out = out;
+        this.elsewhere = elsewhere;
+        this.carries = carries;
+    }
+
+    /**
+     * Tells whether a call may stream here.
+     *
+     * @return {@code false} when the client takes one answer alone.
+     */
+    boolean carries() {
+        return carries;
+    }
+
+    /**
+     * Tells whether a stream was ever started here.
+     *
+     * @return {@code true} once {@link #start} started one.
+     */
+    boolean started() {
+        return started;
     }
 
     /**
@@ -83,6 +118,7 @@ final class Streams implements AutoCloseable {
         }
         final Cancellation cancellation = new Cancellation();
         running.put(key, cancellation);
+        started = true;
         threads.add(
                 Thread.ofVirtual()
                         .name("mcp-stream")
@@ -103,9 +139,39 @@ final class Streams implements AutoCloseable {
      * @param id The id the cancel names.
      */
     void cancel(Object id) {
+        cancelHere(id);
+        elsewhere.accept(id);
+    }
+
+    /**
+     * Cancels the streamed call of a request here only, if it still runs.
+     *
+     * @param id The id the cancel names.
+     */
+    void cancelHere(Object id) {
         final Cancellation cancellation = running.get(key(id));
         if (cancellation != null) {
             cancellation.cancel();
+        }
+    }
+
+    /** Cancels every call still running here, without waiting. */
+    void cancelAll() {
+        running.values().forEach(Cancellation::cancel);
+    }
+
+    /**
+     * Waits until every call started here has ended, without cancelling any.
+     *
+     * @throws InterruptedException When interrupted while waiting.
+     */
+    void awaitAll() throws InterruptedException {
+        final List<Thread> left;
+        synchronized (this) {
+            left = List.copyOf(threads);
+        }
+        for (final Thread thread : left) {
+            thread.join();
         }
     }
 

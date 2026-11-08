@@ -13,7 +13,9 @@ log, can be called as a tool, its replies reaching the agent as MCP progress unt
 - `Daemon.stream` calls with `more` through porelo-wire's `callMore`, handing on every reply as it comes; a cancel
   closes the connection, which ends a read that waits for the next change.
 - stdio writes every message whole through one sink, so progress, answers and the reader's own answers never mix.
-- HTTP follows once the per-task side passes `more`: a `text/event-stream` answer.
+- HTTP: a call with a progress token from a client whose `Accept` names `text/event-stream` gets one, each message
+  one event; the request's deadline ends when the stream starts; the client's closing cancels it; a cancel on another
+  connection reaches it through the server's live streams.
 - Red first: progress per reply with the last as result; a cancel ends the daemon's call and gets no answer; the 65th
   stream refused.
 
@@ -22,4 +24,6 @@ log, can be called as a tool, its replies reaching the agent as MCP progress unt
 - Over stdio: two continued replies and a last one give three progress notifications, the last also the result; a call
   without a token gets one answer; a cancelled `Watch` ends the daemon's call, gets no answer, and the next request is
   answered; the 65th stream at once is refused. Each seen red once.
-- Over HTTP: the same, once the per-task side streams.
+- Over HTTP: each reply an event as it comes, the result the last, then the connection's end; a client without
+  `text/event-stream` gets one answer; a closed connection and a cancel on another connection each end the daemon's
+  call, without an answer; a stream outlives the connection's deadline. Each seen red once.

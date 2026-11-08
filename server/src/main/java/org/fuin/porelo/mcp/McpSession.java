@@ -299,7 +299,9 @@ public final class McpSession {
                 parameters.get("_meta") instanceof Map<?, ?> meta
                         ? meta.get("progressToken")
                         : null;
-        if (streams != null && (token instanceof String || token instanceof Number)) {
+        if (streams != null
+                && streams.carries()
+                && (token instanceof String || token instanceof Number)) {
             final boolean started =
                     streams.start(
                             id,
