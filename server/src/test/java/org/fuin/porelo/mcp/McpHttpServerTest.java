@@ -323,6 +323,13 @@ class McpHttpServerTest {
         for (int i = 0; i < 20; i++) {
             exchange(post(LIST, "Bearer " + TOKEN));
         }
+        // The client's read ends with the server's shutdownOutput, just before the server cancels
+        // the deadline. The wait stays well below the 800 ms deadline, so one left behind is still
+        // queued and seen, not run out.
+        long until = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(200);
+        while (server.pendingDeadlines() > 0 && System.nanoTime() < until) {
+            Thread.sleep(10);
+        }
 
         assertThat(server.pendingDeadlines()).as("no deadline left queued").isZero();
     }

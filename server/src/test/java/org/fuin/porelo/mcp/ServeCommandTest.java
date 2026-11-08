@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -196,7 +197,19 @@ class ServeCommandTest {
         return mcp;
     }
 
-    private static Started start(Path socket, Path daemonSocket, String token) throws IOException {
+    /** Every process a test started, ended after it whatever the test saw. */
+    private final java.util.List<Process> processes = new java.util.ArrayList<>();
+
+    // Harm: a serve that a failing test never stopped, left listening on the machine for good.
+    @AfterEach
+    void endEveryProcessStarted() throws InterruptedException {
+        for (Process process : processes) {
+            process.destroyForcibly();
+            process.waitFor(20, TimeUnit.SECONDS);
+        }
+    }
+
+    private Started start(Path socket, Path daemonSocket, String token) throws IOException {
         String java = ProcessHandle.current().info().command().orElseThrow();
         ProcessBuilder builder =
                 new ProcessBuilder(
@@ -215,6 +228,7 @@ class ServeCommandTest {
                 .keySet()
                 .removeIf(name -> !name.equals("PATH") && !name.equals("HOME"));
         Process process = builder.start();
+        processes.add(process);
         try (OutputStream in = process.getOutputStream()) {
             in.write(token.getBytes(StandardCharsets.ISO_8859_1));
         }
