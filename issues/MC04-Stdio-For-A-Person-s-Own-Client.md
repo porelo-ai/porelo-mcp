@@ -1,6 +1,6 @@
 # MC04 — Stdio For A Person's Own Client
 
-**Status:** Backlog; blocked by [MC02](README.md#mc02).
+**Status:** Implementing
 **Size:** S - one transport over the tools of [MC02](README.md#mc02), no new contract.
 
 **What must be true.** A person adds `porelo-mcp stdio` to their own MCP client on the host and gets the reading tools
