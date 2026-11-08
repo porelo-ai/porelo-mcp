@@ -64,6 +64,26 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 - A call without a progress token, and every call over a task's socket, is made without `more: true`. A method that needs
   a stream gets the daemon's own `StreamRequired` then, passed on as any other error.
 
+## MCP versions
+
+`porelo-mcp` speaks both eras of MCP, over stdio and over a task's socket alike; each request is read by itself, so a
+client may use either.
+
+- **The first era**, with `initialize`: it answers with the version the client asks when that is `2025-11-25`,
+  `2025-06-18` or `2025-03-26`, and with `2025-11-25` otherwise.
+- **`2026-07-28`**, without a handshake: a request whose `params._meta` names `io.modelcontextprotocol/protocolVersion`.
+  - The version must be `2026-07-28`; another gets `-32022` with `data: {"supported": [...], "requested": "..."}`.
+    `io.modelcontextprotocol/clientCapabilities` must be an object, else `-32602`.
+  - `server/discover` names every version spoken, both eras, the `tools` capability, `ttlMs` and `cacheScope:
+    "private"`. Only it, `tools/list` and `tools/call` exist; `initialize` and `ping` are `-32601` in this era.
+  - Every result carries `resultType: "complete"` and `_meta` naming `io.modelcontextprotocol/serverInfo`; `tools/list`
+    also `ttlMs` and `cacheScope`. Tools, arguments, refusals and progress are as above.
+- **Over a task's socket**, a request of `2026-07-28` (its body's `_meta`, `Mcp-Method`, or `MCP-Protocol-Version:
+  2026-07-28`) must carry `MCP-Protocol-Version` and `Mcp-Method` as its body says, and for `tools/call` `Mcp-Name` as
+  the tool's name. A header that is missing or says otherwise gets `400` with `-32020`, before the request is served; a
+  request the session refuses as such (`-32700`, `-32600`, `-32602`, `-32021`, `-32022`) gets `400` too. None of these
+  headers may appear twice. A request of the first era with an `MCP-Protocol-Version` neither era has gets `400`.
+
 ## Ready and exit
 
 - `porelo-mcp` prints `ready` on standard output once it listens, and logs on standard error. `porelod` waits for that

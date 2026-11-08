@@ -37,7 +37,8 @@ record HttpRequestHead(String method, String target, Map<String, String> headers
                     "authorization",
                     "host",
                     "mcp-protocol-version",
-                    "mcp-method");
+                    "mcp-method",
+                    "mcp-name");
 
     /** A request refused as malformed, with the status it gets. */
     static final class Refused extends Exception {

@@ -187,18 +187,6 @@ public final class McpHttpServer implements AutoCloseable {
             respond(out, 405, null);
             return;
         }
-        final String version = head.header("mcp-protocol-version");
-        if (head.header("mcp-method") != null
-                || version != null && !McpSession.VERSIONS.contains(version)) {
-            // A client of both eras probes in the newer one first and falls back on a 4xx like
-            // this.
-            respond(
-                    out,
-                    400,
-                    jsonRpcError(
-                            "This server speaks MCP " + String.join(", ", McpSession.VERSIONS)));
-            return;
-        }
         final byte[] body;
         try {
             body = head.body(in);
@@ -206,11 +194,17 @@ public final class McpHttpServer implements AutoCloseable {
             respond(out, refused.status(), null);
             return;
         }
-        final String answered = session.handle(new String(body, StandardCharsets.UTF_8));
+        final String message = new String(body, StandardCharsets.UTF_8);
+        final Era era = Era.of(head, message);
+        if (era.refusal() != null) {
+            respond(out, 400, era.refusal());
+            return;
+        }
+        final String answered = session.handle(message);
         if (answered == null) {
             respond(out, 202, null);
         } else {
-            respond(out, 200, answered);
+            respond(out, era.modern() && Era.refusesTheRequest(answered) ? 400 : 200, answered);
         }
     }
 
@@ -233,11 +227,11 @@ public final class McpHttpServer implements AutoCloseable {
         }
     }
 
-    private static String jsonRpcError(String message) {
+    static String jsonRpcError(@Nullable Object id, int code, String message) {
         final Map<String, Object> error = new java.util.LinkedHashMap<>();
         error.put("jsonrpc", "2.0");
-        error.put("id", null);
-        error.put("error", Map.of("code", McpSession.INVALID_REQUEST, "message", message));
+        error.put("id", id);
+        error.put("error", Map.of("code", code, "message", message));
         return Json.write(error);
     }
 

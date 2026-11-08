@@ -116,6 +116,46 @@ class StdioCommandTest {
         }
     }
 
+    // Harm: a client that offers only MCP 2026-07-28 never reaching the tools from the person's
+    // own MCP client.
+    @Test
+    void aClientOfTwoThousandTwentySixDiscoversAndCallsWithoutAHandshake() throws Exception {
+        VarlinkServer.Method list =
+                (parameters, replies) ->
+                        replies.last(Map.of("tasks", List.of(), "unrecognized", List.of()));
+        Map<String, Object> meta =
+                Map.of(
+                        McpSession.PROTOCOL_VERSION,
+                        "2026-07-28",
+                        McpSession.CLIENT_CAPABILITIES,
+                        Map.of());
+        try (var daemon =
+                standIn(
+                        sets(List.of("List"), List.of(), List.of(), List.of()),
+                        Map.of("List", list))) {
+            Ran ran =
+                    run(
+                            daemon,
+                            request(1, "server/discover", Map.of("_meta", meta)),
+                            request(
+                                    2,
+                                    "tools/call",
+                                    Map.of("name", "List", "arguments", Map.of(), "_meta", meta)));
+
+            assertThat(ran.code).as("ends with its input: %s", ran.err).isEqualTo(0);
+            Map<?, ?> discovered = (Map<?, ?>) ran.answers.get(0).get("result");
+            assertThat(discovered).as("discovered: %s", ran.answers.get(0)).isNotNull();
+            assertThat(discovered.get("supportedVersions").toString())
+                    .as("the version it asked for")
+                    .contains("2026-07-28");
+            Map<?, ?> called = (Map<?, ?>) ran.answers.get(1).get("result");
+            assertThat(called.get("resultType")).as("a complete result").isEqualTo("complete");
+            assertThat(called.get("structuredContent"))
+                    .as("the daemon's reply")
+                    .isEqualTo(Map.of("tasks", List.of(), "unrecognized", List.of()));
+        }
+    }
+
     // Harm: a writing method offered that the person never named.
     @Test
     void withNoListExactlyTheReadingSetIsOffered() throws Exception {

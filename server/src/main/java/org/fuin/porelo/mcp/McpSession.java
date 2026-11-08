@@ -20,6 +20,24 @@ public final class McpSession {
     /** The MCP versions answered, newest first; a client offering another gets the newest. */
     static final List<String> VERSIONS = List.of("2025-11-25", "2025-06-18", "2025-03-26");
 
+    /**
+     * The MCP versions of the second era, which has no handshake: each request names its version
+     * and the client's capabilities in {@code _meta}.
+     */
+    static final List<String> MODERN_VERSIONS = List.of("2026-07-28");
+
+    /** MCP's code for a request naming a version this server does not speak. */
+    static final int UNSUPPORTED_PROTOCOL_VERSION = -32022;
+
+    /** The {@code _meta} key naming a modern request's version. */
+    static final String PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion";
+
+    /** The {@code _meta} key holding a modern request's client capabilities. */
+    static final String CLIENT_CAPABILITIES = "io.modelcontextprotocol/clientCapabilities";
+
+    /** How long a client may keep the discovery and the tool list: the tools never change. */
+    private static final long TTL_MS = 3_600_000;
+
     /** JSON-RPC's code for a message that is not JSON. */
     static final int PARSE_ERROR = -32700;
 
@@ -122,13 +140,85 @@ public final class McpSession {
         @SuppressWarnings("unchecked")
         final Map<String, Object> parameters =
                 params == null ? Map.of() : (Map<String, Object>) params;
+        if (parameters.get("_meta") instanceof Map<?, ?> meta
+                && meta.containsKey(PROTOCOL_VERSION)) {
+            return modern(id, method, parameters, meta, streams);
+        }
         return switch (method) {
             case "initialize" -> result(id, initialize(parameters));
             case "ping" -> result(id, Map.of());
             case "tools/list" -> result(id, Map.of("tools", listed()));
-            case "tools/call" -> call(id, parameters, streams);
+            case "tools/call" -> call(id, parameters, streams, false);
             default -> error(id, METHOD_NOT_FOUND, "No method '" + method + "'");
         };
+    }
+
+    /**
+     * A request of the second era: its version and the client's capabilities checked first, then
+     * only the methods that era has.
+     */
+    private @Nullable String modern(
+            Object id,
+            String method,
+            Map<String, Object> parameters,
+            Map<?, ?> meta,
+            @Nullable Streams streams) {
+        final Object asked = meta.get(PROTOCOL_VERSION);
+        if (!(asked instanceof String requested)) {
+            return error(id, INVALID_PARAMS, PROTOCOL_VERSION + " must be a string");
+        }
+        if (!MODERN_VERSIONS.contains(requested)) {
+            final Map<String, Object> data = new LinkedHashMap<>();
+            data.put("supported", MODERN_VERSIONS);
+            data.put("requested", requested);
+            return error(
+                    id,
+                    UNSUPPORTED_PROTOCOL_VERSION,
+                    "This server speaks MCP "
+                            + String.join(", ", MODERN_VERSIONS)
+                            + " without a handshake",
+                    data);
+        }
+        if (!(meta.get(CLIENT_CAPABILITIES) instanceof Map<?, ?>)) {
+            return error(id, INVALID_PARAMS, CLIENT_CAPABILITIES + " must be an object");
+        }
+        return switch (method) {
+            case "server/discover" -> result(id, complete(discover()));
+            case "tools/list" -> {
+                final Map<String, Object> listed = new LinkedHashMap<>();
+                listed.put("tools", listed());
+                listed.put("ttlMs", TTL_MS);
+                listed.put("cacheScope", "private");
+                yield result(id, complete(listed));
+            }
+            case "tools/call" -> call(id, parameters, streams, true);
+            default ->
+                    error(id, METHOD_NOT_FOUND, "No method '" + method + "' in MCP " + requested);
+        };
+    }
+
+    private Map<String, Object> discover() {
+        final List<String> supported = new java.util.ArrayList<>(MODERN_VERSIONS);
+        supported.addAll(VERSIONS);
+        final Map<String, Object> result = new LinkedHashMap<>();
+        result.put("supportedVersions", supported);
+        result.put("capabilities", Map.of("tools", Map.of()));
+        result.put("ttlMs", TTL_MS);
+        result.put("cacheScope", "private");
+        return result;
+    }
+
+    /** A modern result: complete, and naming who answered. */
+    private Map<String, Object> complete(Map<String, Object> result) {
+        final Map<String, Object> completed = new LinkedHashMap<>();
+        completed.put("resultType", "complete");
+        completed.putAll(result);
+        completed.put(
+                "_meta",
+                Map.of(
+                        "io.modelcontextprotocol/serverInfo",
+                        Map.of("name", "porelo-mcp", "version", version)));
+        return completed;
     }
 
     private Map<String, Object> initialize(Map<String, Object> parameters) {
@@ -149,7 +239,7 @@ public final class McpSession {
     }
 
     private @Nullable String call(
-            Object id, Map<String, Object> parameters, @Nullable Streams streams) {
+            Object id, Map<String, Object> parameters, @Nullable Streams streams, boolean modern) {
         if (!(parameters.get("name") instanceof String name)) {
             return error(id, INVALID_PARAMS, "tools/call names no tool");
         }
@@ -174,7 +264,14 @@ public final class McpSession {
                             id,
                             cancellation -> {
                                 final String answer =
-                                        stream(id, tool, given, token, streams, cancellation);
+                                        stream(
+                                                id,
+                                                tool,
+                                                given,
+                                                token,
+                                                streams,
+                                                cancellation,
+                                                modern);
                                 // A cancelled request gets no answer, as MCP says.
                                 streams.send(cancellation, answer);
                             });
@@ -191,9 +288,9 @@ public final class McpSession {
         try {
             reply = daemon.call(tool.method(), given);
         } catch (VarlinkException ex) {
-            return failed(id, ex);
+            return failed(id, ex, modern);
         }
-        return result(id, toolResult(exact(reply), false));
+        return result(id, toolResult(exact(reply), false, modern));
     }
 
     /** A streamed call: each reply as progress, the last one also the answer. */
@@ -203,7 +300,8 @@ public final class McpSession {
             Map<String, Object> given,
             Object token,
             Streams streams,
-            Cancellation cancellation) {
+            Cancellation cancellation,
+            boolean modern) {
         final long[] count = {0};
         final Map<String, Object> last;
         try {
@@ -217,13 +315,13 @@ public final class McpSession {
                                             progress(token, ++count[0], exact(reply))),
                             cancellation);
         } catch (VarlinkException ex) {
-            return failed(id, ex);
+            return failed(id, ex, modern);
         }
-        return result(id, toolResult(exact(last), false));
+        return result(id, toolResult(exact(last), false, modern));
     }
 
     /** A daemon's refusal as the tool's error, or a broken connection as a protocol error. */
-    private static String failed(Object id, VarlinkException ex) {
+    private String failed(Object id, VarlinkException ex, boolean modern) {
         final String refusal = ex.getErrorName();
         if (refusal == null) {
             return error(id, INTERNAL_ERROR, String.valueOf(ex.getMessage()));
@@ -232,7 +330,7 @@ public final class McpSession {
         refused.put("error", refusal);
         final Map<String, Object> refusedWith = ex.getParameters();
         refused.put("parameters", refusedWith == null ? Map.of() : exact(refusedWith));
-        return result(id, toolResult(refused, true));
+        return result(id, toolResult(refused, true, modern));
     }
 
     private static String progress(Object token, long count, Map<String, Object> reply) {
@@ -272,12 +370,13 @@ public final class McpSession {
                 };
     }
 
-    private static Map<String, Object> toolResult(Map<String, Object> content, boolean isError) {
+    private Map<String, Object> toolResult(
+            Map<String, Object> content, boolean isError, boolean modern) {
         final Map<String, Object> result = new LinkedHashMap<>();
         result.put("content", List.of(Map.of("type", "text", "text", Json.write(content))));
         result.put("structuredContent", content);
         result.put("isError", isError);
-        return result;
+        return modern ? complete(result) : result;
     }
 
     private static String result(Object id, Map<String, Object> result) {
@@ -293,6 +392,19 @@ public final class McpSession {
         response.put("jsonrpc", "2.0");
         response.put("id", id);
         response.put("error", Map.of("code", code, "message", message));
+        return Json.write(response);
+    }
+
+    private static String error(
+            @Nullable Object id, int code, String message, Map<String, Object> data) {
+        final Map<String, Object> error = new LinkedHashMap<>();
+        error.put("code", code);
+        error.put("message", message);
+        error.put("data", data);
+        final Map<String, Object> response = new LinkedHashMap<>();
+        response.put("jsonrpc", "2.0");
+        response.put("id", id);
+        response.put("error", error);
         return Json.write(response);
     }
 }

@@ -5,7 +5,7 @@ What holds and why: one row per decision, and its full text below.
 | Covers | What holds |
 |---|---|
 | MCP layer | [MCP is spoken by a small layer of its own, not by an SDK](#mcp-is-spoken-by-a-small-layer-of-its-own-not-by-an-sdk) |
-| MCP version | [It speaks the versions with `initialize`, up to `2025-11-25`](#it-speaks-the-versions-with-initialize-up-to-2025-11-25) |
+| MCP version | [It speaks both eras: `initialize` up to `2025-11-25`, and `2026-07-28`](#it-speaks-both-eras-initialize-up-to-2025-11-25-and-2026-07-28) |
 
 ## MCP is spoken by a small layer of its own, not by an SDK
 
@@ -65,22 +65,24 @@ What would change the answer: a fault found in the HTTP reader that a bound does
 in chunked encoding, for many sessions at once, or for server-to-client streams beyond what one process per task needs.
 Then Jetty's Unix-socket connector carries HTTP, still without the SDK.
 
-## It speaks the versions with `initialize`, up to `2025-11-25`
+## It speaks both eras: `initialize` up to `2025-11-25`, and `2026-07-28`
 
 `porelo-mcp` answers `initialize` with the version the client asks when it is `2025-11-25`, `2025-06-18` or `2025-03-26`,
-and with `2025-11-25` otherwise. It does not speak `2026-07-28` yet.
+and with `2025-11-25` otherwise. Beside it, it speaks `2026-07-28`, built against that version's published text, whose
+pages call it neither final nor draft. Each request says its era by itself, so the two need no state between them; how
+each is answered is in [binding.md](binding.md#mcp-versions).
 
 - `2026-07-28` removes `initialize`, `ping` and sessions, carries the version and the client's capabilities in every
   request's `_meta`, requires `server/discover`, a `resultType` in every result, and on HTTP the headers
   `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` checked against the body. That is a protocol of its own beside the
-  first, not a field more.
+  first, not a field more, and it is answered beside the first era, not in its place.
 - The MCP clients of Claude Code, Codex and agy each offer both eras. The specification has such a client fall back to
-  `initialize` when a server does not answer `server/discover` as a modern server does, so all three reach a server of
-  the first era.
+  `initialize` when a server does not answer `server/discover` as a modern server does; a client that offers only
+  `2026-07-28` has nothing to fall back to, and reaches the tools only because the second era is spoken.
 - Claude Code's client checks `structuredContent` against a tool's `outputSchema` only when `isError` is false, read in
   its executable. So a refusal can carry `{"error", "parameters"}` as its structured content, although that is not the
   method's reply.
 
-What would change the answer: a client the agents use that offers only `2026-07-28`, or a client that drops the first
-era.
+What would change the answer: no client the agents use offering the first era any more, when it is dropped; or a later
+version of the second era, which is added beside `2026-07-28`.
 

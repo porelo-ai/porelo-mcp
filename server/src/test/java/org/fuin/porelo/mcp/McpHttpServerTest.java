@@ -255,14 +255,65 @@ class McpHttpServerTest {
                 .isEqualTo("rw-------");
     }
 
-    // Harm: a client of the newer MCP era never falling back, and so never reaching the tools.
+    // Harm: a client that offers only MCP 2026-07-28 never reaching the tools over a task's socket.
     @Test
-    void aRequestOfTheNewerEraGetsAFourHundredSoTheClientFallsBack() throws Exception {
-        String modern =
-                "POST /mcp HTTP/1.1\r\nAuthorization: Bearer "
-                        + TOKEN
-                        + "\r\nMCP-Protocol-Version: 2026-07-28\r\n"
-                        + "Mcp-Method: server/discover\r\nContent-Length: 2\r\n\r\n{}";
+    void aModernRequestWhoseHeadersMatchItsBodyIsServed() throws Exception {
+        String answer =
+                exchange(modern("2026-07-28", "server/discover", null, discover("2026-07-28")));
+
+        assertThat(status(answer)).as("served").isEqualTo(200);
+        assertThat(body(answer)).as("a complete discovery").contains("\"resultType\":\"complete\"");
+    }
+
+    // Harm: a proxy routing by header to one place while the server does another thing, or a
+    // client's request taken for another version than its own.
+    @Test
+    void aHeaderThatDiffersFromTheBodyIsAFourHundredHeaderMismatch() throws Exception {
+        String call =
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"List\","
+                        + "\"arguments\":{},\"_meta\":"
+                        + META
+                        + "}}";
+
+        String method = exchange(modern("2026-07-28", "tools/list", null, discover("2026-07-28")));
+        String name = exchange(modern("2026-07-28", "tools/call", "Get", call));
+        String nameMissing = exchange(modern("2026-07-28", "tools/call", null, call));
+        String version =
+                exchange(modern("2025-11-25", "server/discover", null, discover("2026-07-28")));
+        String methodOnly = exchange(modern(null, "server/discover", null, "{}"));
+
+        assertThat(status(method)).as("another method").isEqualTo(400);
+        assertThat(body(method)).as("HeaderMismatch").contains("-32020");
+        assertThat(status(name)).as("another tool").isEqualTo(400);
+        assertThat(body(name)).as("HeaderMismatch").contains("-32020");
+        assertThat(status(nameMissing)).as("no tool header").isEqualTo(400);
+        assertThat(status(version)).as("another version").isEqualTo(400);
+        assertThat(body(version)).as("HeaderMismatch").contains("-32020");
+        assertThat(status(methodOnly)).as("a method header on a body without one").isEqualTo(400);
+        String noHeaders = exchange(post(discover("2026-07-28"), "Bearer " + TOKEN));
+        assertThat(status(noHeaders)).as("a modern body without its headers").isEqualTo(400);
+        assertThat(body(noHeaders)).as("HeaderMismatch").contains("-32020");
+        assertThat(status(exchange(modern("2026-07-28", "tools/call", "List", call))))
+                .as("the same call with matching headers")
+                .isEqualTo(200);
+    }
+
+    // Harm: a client of an unknown version told nothing it could fall back to.
+    @Test
+    void aVersionNotSpokenIsAFourHundredNamingTheVersionsThatAre() throws Exception {
+        String answer =
+                exchange(modern("2099-01-01", "server/discover", null, discover("2099-01-01")));
+
+        assertThat(status(answer)).as("refused").isEqualTo(400);
+        assertThat(body(answer))
+                .as("UnsupportedProtocolVersion")
+                .contains("-32022")
+                .contains("2026-07-28");
+    }
+
+    // Harm: a client of the first era cut off by the second.
+    @Test
+    void aRequestOfTheFirstEraIsServedAsBefore() throws Exception {
         String current =
                 "POST /mcp HTTP/1.1\r\nAuthorization: Bearer "
                         + TOKEN
@@ -272,17 +323,44 @@ class McpHttpServerTest {
                         + "\r\n\r\n"
                         + LIST;
 
-        String methodOnly =
-                "POST /mcp HTTP/1.1\r\nAuthorization: Bearer "
-                        + TOKEN
-                        + "\r\n"
-                        + "Mcp-Method: server/discover\r\nContent-Length: 2\r\n\r\n{}";
+        assertThat(status(exchange(current))).as("a version it speaks").isEqualTo(200);
+        assertThat(status(exchange(post(LIST, "Bearer " + TOKEN))))
+                .as("no version header")
+                .isEqualTo(200);
+    }
 
-        assertThat(status(exchange(modern))).as("a newer version").isEqualTo(400);
-        assertThat(status(exchange(methodOnly)))
-                .as("the newer era's method header alone")
-                .isEqualTo(400);
-        assertThat(status(exchange(current))).as("a version it speaks is served").isEqualTo(200);
+    private static final String META =
+            "{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\","
+                    + "\"io.modelcontextprotocol/clientCapabilities\":{}}";
+
+    private static String discover(String version) {
+        return "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{\"_meta\":"
+                + "{\"io.modelcontextprotocol/protocolVersion\":\""
+                + version
+                + "\",\"io.modelcontextprotocol/clientCapabilities\":{}}}}";
+    }
+
+    private static String modern(
+            @org.jspecify.annotations.Nullable String version,
+            String method,
+            @org.jspecify.annotations.Nullable String name,
+            String json) {
+        return "POST /mcp HTTP/1.1\r\nAuthorization: Bearer "
+                + TOKEN
+                + "\r\n"
+                + (version == null ? "" : "MCP-Protocol-Version: " + version + "\r\n")
+                + "Mcp-Method: "
+                + method
+                + "\r\n"
+                + (name == null ? "" : "Mcp-Name: " + name + "\r\n")
+                + "Content-Length: "
+                + json.getBytes(StandardCharsets.UTF_8).length
+                + "\r\n\r\n"
+                + json;
+    }
+
+    private static String body(String answer) {
+        return answer.substring(answer.indexOf("\r\n\r\n") + 4);
     }
 
     // Harm: every answered connection held until its deadline by a client that keeps its end open.
@@ -465,9 +543,14 @@ class McpHttpServerTest {
     private static String exchange(Path at, String request, boolean halfClose) throws IOException {
         try (SocketChannel client = SocketChannel.open(StandardProtocolFamily.UNIX)) {
             client.connect(UnixDomainSocketAddress.of(at));
-            client.write(ByteBuffer.wrap(request.getBytes(StandardCharsets.UTF_8)));
-            if (halfClose) {
-                client.shutdownOutput();
+            try {
+                client.write(ByteBuffer.wrap(request.getBytes(StandardCharsets.UTF_8)));
+                if (halfClose) {
+                    client.shutdownOutput();
+                }
+            } catch (IOException closed) {
+                // A server that closes at once, as for a peer of another user, may do so before
+                // the whole request is written: a broken pipe here, and what it sent is read below.
             }
             var answer = new java.io.ByteArrayOutputStream();
             ByteBuffer buffer = ByteBuffer.allocate(8192);
@@ -476,7 +559,7 @@ class McpHttpServerTest {
                     answer.write(buffer.array(), 0, buffer.position());
                     buffer.clear();
                 }
-            } catch (java.net.SocketException reset) {
+            } catch (IOException reset) {
                 // A connection closed without an answer may arrive as a reset; what was read
                 // stands.
             }
