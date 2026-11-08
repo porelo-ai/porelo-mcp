@@ -61,8 +61,8 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
   same.
 - A name that is no tool is a JSON-RPC error (`-32602`). A call the daemon cannot be reached for, because its socket is
   gone or the connection broke, is a JSON-RPC error (`-32603`) naming the socket; the process does not exit for it.
-- A call is made without `more: true`. A method that needs a stream gets the daemon's own `StreamRequired`, passed on as
-  any other error.
+- A call without a progress token, and every call over a task's socket, is made without `more: true`. A method that needs
+  a stream gets the daemon's own `StreamRequired` then, passed on as any other error.
 
 ## Ready and exit
 
@@ -105,7 +105,8 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 - A stream that sends only on a change, such as `Watch`, ends only when the client sends `notifications/cancelled` for
   its request. `porelo-mcp` then closes that daemon connection and sends no answer, as MCP has it. What the stream sent
   is in its progress notifications.
-- At most 64 streams run at once in one stdio session; one more is refused at once with JSON-RPC error `-32600`.
+- At most 64 streams run at once in one stdio session, and only one per request id; one more, or a second one under an
+  id still streaming, is refused at once with JSON-RPC error `-32600`. When standard output fails, every stream ends.
 - Over a task's socket a call is answered once, progress token or not.
 
 ## Checking it

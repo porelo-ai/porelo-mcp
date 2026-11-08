@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /**
  * The streamed calls of one session that are still running, each on a thread of its own, so the
@@ -16,16 +17,17 @@ final class Streams implements AutoCloseable {
     /** The most streams one session runs at once; one more is refused, not queued. */
     static final int MAX_STREAMS = 64;
 
-    private final Consumer<String> out;
+    private final Predicate<String> out;
     private final Map<String, Cancellation> running = new ConcurrentHashMap<>();
     private final List<Thread> threads = new ArrayList<>();
 
     /**
      * Streams whose messages go out one whole message at a time.
      *
-     * @param out Writes one message; called from several threads, each call whole.
+     * @param out Writes one message and says whether it went out; called from several threads, each
+     *     call whole. A message that did not go out ends every stream: nobody reads them any more.
      */
-    Streams(Consumer<String> out) {
+    Streams(Predicate<String> out) {
         this.out = out;
     }
 
@@ -35,8 +37,32 @@ final class Streams implements AutoCloseable {
      * @param message One JSON-RPC message.
      */
     void send(String message) {
+        final boolean written;
         synchronized (out) {
-            out.accept(message);
+            written = out.test(message);
+        }
+        if (!written) {
+            running.values().forEach(Cancellation::cancel);
+        }
+    }
+
+    /**
+     * Sends one message of a streamed call, unless that call was cancelled: checked under the same
+     * lock as the write, so nothing of a call goes out after the reader saw its cancel.
+     *
+     * @param cancellation The call's.
+     * @param message One JSON-RPC message.
+     */
+    void send(Cancellation cancellation, String message) {
+        final boolean written;
+        synchronized (out) {
+            if (cancellation.cancelled()) {
+                return;
+            }
+            written = out.test(message);
+        }
+        if (!written) {
+            running.values().forEach(Cancellation::cancel);
         }
     }
 
@@ -45,14 +71,16 @@ final class Streams implements AutoCloseable {
      *
      * @param id The request's id, which a cancel names.
      * @param body The call, given what cancels it.
-     * @return {@code false} when the bound is reached and nothing was started.
+     * @return {@code false} when the bound is reached, or a stream of this id runs still, and
+     *     nothing was started.
      */
     synchronized boolean start(Object id, Consumer<Cancellation> body) {
         threads.removeIf(thread -> !thread.isAlive());
-        if (running.size() >= MAX_STREAMS) {
+        final String key = key(id);
+        // One per id: a second would be one a cancel cannot name, and one the bound does not count.
+        if (running.size() >= MAX_STREAMS || running.containsKey(key)) {
             return false;
         }
-        final String key = key(id);
         final Cancellation cancellation = new Cancellation();
         running.put(key, cancellation);
         threads.add(

@@ -94,10 +94,11 @@ final class StdioLines {
         }
     }
 
-    private static void write(PrintStream out, String json) {
+    private static boolean write(PrintStream out, String json) {
         // Json.write escapes every line break inside a string, so one answer is one line.
         out.print(json);
         out.print('\n');
         out.flush();
+        return !out.checkError();
     }
 }

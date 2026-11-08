@@ -106,7 +106,8 @@ public final class McpSession {
             if (streams != null
                     && "notifications/cancelled".equals(method)
                     && request.get("params") instanceof Map<?, ?> cancelled
-                    && cancelled.get("requestId") instanceof Object requestId) {
+                    && cancelled.get("requestId") instanceof Object requestId
+                    && (requestId instanceof String || requestId instanceof Number)) {
                 streams.cancel(requestId);
             }
             return null;
@@ -175,16 +176,16 @@ public final class McpSession {
                                 final String answer =
                                         stream(id, tool, given, token, streams, cancellation);
                                 // A cancelled request gets no answer, as MCP says.
-                                if (!cancellation.cancelled()) {
-                                    streams.send(answer);
-                                }
+                                streams.send(cancellation, answer);
                             });
             return started
                     ? null
                     : error(
                             id,
                             INVALID_REQUEST,
-                            "At most " + Streams.MAX_STREAMS + " streams run at once");
+                            "At most "
+                                    + Streams.MAX_STREAMS
+                                    + " streams run at once, one per request id");
         }
         final Map<String, Object> reply;
         try {
@@ -210,7 +211,10 @@ public final class McpSession {
                     daemon.stream(
                             tool.method(),
                             given,
-                            reply -> streams.send(progress(token, ++count[0], exact(reply))),
+                            reply ->
+                                    streams.send(
+                                            cancellation,
+                                            progress(token, ++count[0], exact(reply))),
                             cancellation);
         } catch (VarlinkException ex) {
             return failed(id, ex);

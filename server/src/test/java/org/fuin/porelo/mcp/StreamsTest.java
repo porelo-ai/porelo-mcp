@@ -44,21 +44,33 @@ class StreamsTest {
     // Harm: an agent following a log or a build sees nothing until it ends, or sees only its end.
     @Test
     void withAProgressTokenEachReplyIsProgressAndTheLastIsAlsoTheResult() throws Exception {
+        // The next reply waits until the client has seen the one before, so a progress held back
+        // until the stream ends never arrives.
+        BlockingQueue<Boolean> seen = new LinkedBlockingQueue<>();
+        List<Map<String, Object>> asked = new java.util.concurrent.CopyOnWriteArrayList<>();
         VarlinkServer.Method tail =
                 (parameters, replies) -> {
+                    asked.add(parameters);
                     if (!replies.streaming()) {
                         replies.last(Map.of("line", "once"));
                         return;
                     }
                     replies.more(Map.of("line", "one"));
+                    awaitSeen(seen);
                     replies.more(Map.of("line", "two"));
+                    awaitSeen(seen);
                     replies.last(Map.of("line", "three"));
                 };
         try (var daemon = standIn(Map.of("Tail", tail))) {
             Stdio stdio = start(daemon);
 
             stdio.send(call(1, "Tail", Map.of("task", "t-1"), "p-1"));
-            List<Map<String, Object>> got = stdio.until(1);
+            List<Map<String, Object>> got = new ArrayList<>();
+            got.add(stdio.next());
+            seen.add(true);
+            got.add(stdio.next());
+            seen.add(true);
+            got.addAll(stdio.until(1));
             stdio.send(call(2, "Tail", Map.of("task", "t-1"), null));
             Map<String, Object> plain = stdio.until(2).getLast();
 
@@ -83,6 +95,113 @@ class StreamsTest {
             assertThat(structured(plain))
                     .as("without a token, one answer as before")
                     .isEqualTo(Map.of("line", "once"));
+            assertThat(asked)
+                    .as("the arguments passed on, streamed or not")
+                    .containsExactly(Map.of("task", "t-1"), Map.of("task", "t-1"));
+        }
+    }
+
+    // Harm: two streams under one id, one of which no cancel can name and the bound does not
+    // count.
+    @Test
+    void aSecondStreamUnderAnIdStillStreamingIsRefused() throws Exception {
+        try (var daemon = standIn(Map.of("Watch", endless()))) {
+            Stdio stdio = start(daemon);
+
+            stdio.send(call(7, "Watch", Map.of(), "a"));
+            Map<String, Object> first = stdio.next();
+            stdio.send(call(7, "Watch", Map.of(), "b"));
+            Map<String, Object> second = stdio.next();
+
+            assertThat(first.get("method"))
+                    .as("the first streams")
+                    .isEqualTo("notifications/progress");
+            assertThat(((Map<?, ?>) second.get("error")).get("code"))
+                    .as("the second refused at once")
+                    .isEqualTo(new BigDecimal(-32600));
+        }
+    }
+
+    // Harm: a cancel naming something that is no id ending a stream whose string id reads like it.
+    @Test
+    void aCancelWhoseRequestIdIsNoStringOrNumberCancelsNothing() throws Exception {
+        CountDownLatch gone = new CountDownLatch(1);
+        try (var daemon = standIn(Map.of("Watch", endless(gone)))) {
+            Stdio stdio = start(daemon);
+
+            stdio.send(
+                    "{\"jsonrpc\":\"2.0\",\"id\":\"[1]\",\"method\":\"tools/call\",\"params\":"
+                            + "{\"name\":\"Watch\",\"arguments\":{},\"_meta\":{\"progressToken\":\"t\"}}}");
+            stdio.next();
+            stdio.send(
+                    "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\","
+                            + "\"params\":{\"requestId\":[1]}}");
+            stdio.send(request(2, "ping", Map.of()));
+            stdio.until(2);
+
+            assertThat(gone.await(500, TimeUnit.MILLISECONDS))
+                    .as("the stream under \"[1]\" still runs")
+                    .isFalse();
+        }
+    }
+
+    // Harm: a client gone from standard output leaves its streams reading the daemon for good.
+    @Test
+    void whenStandardOutputFailsEveryStreamEnds() throws Exception {
+        CountDownLatch gone = new CountDownLatch(1);
+        VarlinkServer.Method tail =
+                (parameters, replies) -> {
+                    while (replies.open()) {
+                        replies.more(Map.of("line", "more"));
+                        try {
+                            Thread.sleep(50);
+                        } catch (InterruptedException ex) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                    }
+                    gone.countDown();
+                };
+        try (var daemon = standIn(Map.of("Tail", tail))) {
+            Stdio stdio = start(daemon);
+
+            stdio.send(call(1, "Tail", Map.of("task", "t-1"), "f"));
+            stdio.next();
+            stdio.closeOutput();
+
+            assertThat(gone.await(10, TimeUnit.SECONDS))
+                    .as("the daemon's call ended once nothing could be written")
+                    .isTrue();
+        }
+    }
+
+    private static VarlinkServer.Method endless() {
+        return endless(new CountDownLatch(1));
+    }
+
+    private static VarlinkServer.Method endless(CountDownLatch gone) {
+        return (parameters, replies) -> {
+            replies.more(Map.of("tasks", List.of()));
+            while (replies.open()) {
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+            gone.countDown();
+        };
+    }
+
+    private static void awaitSeen(BlockingQueue<Boolean> seen) throws IOException {
+        try {
+            if (seen.poll(10, TimeUnit.SECONDS) == null) {
+                throw new IOException("the client never saw the reply before");
+            }
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IOException(ex);
         }
     }
 
@@ -137,42 +256,42 @@ class StreamsTest {
     // Harm: one client opening stream after stream until the process has no thread or descriptor
     // left.
     @Test
-    void atMostSixtyFourStreamsRunAtOnceAndOneMoreIsRefusedNotQueued() throws Exception {
-        VarlinkServer.Method watch =
-                (parameters, replies) -> {
-                    replies.more(Map.of("tasks", List.of()));
-                    while (replies.open()) {
-                        try {
-                            Thread.sleep(20);
-                        } catch (InterruptedException ex) {
-                            Thread.currentThread().interrupt();
-                            return;
-                        }
-                    }
-                };
-        try (var daemon = standIn(Map.of("Watch", watch))) {
+    void atMostSixtyFourStreamsRunAtOnceOneMoreIsRefusedAndACancelFreesItsPlace() throws Exception {
+        try (var daemon = standIn(Map.of("Watch", endless()))) {
             Stdio stdio = start(daemon);
             for (int i = 1; i <= Streams.MAX_STREAMS; i++) {
                 stdio.send(call(i, "Watch", Map.of(), "w-" + i));
             }
-            List<Map<String, Object>> first = new ArrayList<>();
+            java.util.Set<Object> tokens = new java.util.HashSet<>();
             for (int i = 1; i <= Streams.MAX_STREAMS; i++) {
-                first.add(stdio.next());
+                tokens.add(params(stdio.next()).get("progressToken"));
             }
 
             stdio.send(call(1000, "Watch", Map.of(), "w-1000"));
             Map<String, Object> refused = stdio.until(1000).getLast();
+            stdio.send(
+                    "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\","
+                            + "\"params\":{\"requestId\":1}}");
+            // The cancelled stream's place is free once its thread ends, a moment after the cancel.
+            Object freed = null;
+            for (int attempt = 0; attempt < 50 && freed == null; attempt++) {
+                stdio.send(call(2000 + attempt, "Watch", Map.of(), "again"));
+                Map<String, Object> each = stdio.next();
+                if ("notifications/progress".equals(each.get("method"))) {
+                    freed = params(each).get("progressToken");
+                } else {
+                    Thread.sleep(100);
+                }
+            }
 
-            assertThat(first)
-                    .as("each of the 64 streaming")
-                    .allSatisfy(
-                            each ->
-                                    assertThat(each.get("method"))
-                                            .as("a progress")
-                                            .isEqualTo("notifications/progress"));
+            assertThat(tokens)
+                    .as("each of the 64 streaming under its own token")
+                    .hasSize(Streams.MAX_STREAMS)
+                    .contains("w-1", "w-64");
             assertThat(((Map<?, ?>) refused.get("error")).get("code"))
                     .as("the 65th refused at once")
                     .isEqualTo(new BigDecimal(-32600));
+            assertThat(freed).as("a new stream once one was cancelled").isEqualTo("again");
         }
     }
 
@@ -225,9 +344,11 @@ class StreamsTest {
     /** A stdio process spoken to line by line, each line it writes read as it comes. */
     private static final class Stdio {
         private final OutputStream in;
+        private final Process process;
         private final BlockingQueue<String> lines = new LinkedBlockingQueue<>();
 
         Stdio(Process process) {
+            this.process = process;
             in = process.getOutputStream();
             Thread.ofPlatform()
                     .daemon()
@@ -243,6 +364,11 @@ class StreamsTest {
                                     // The process ended.
                                 }
                             });
+        }
+
+        /** Closes the end the process writes its standard output to, as a client gone does. */
+        void closeOutput() throws IOException {
+            process.getInputStream().close();
         }
 
         void send(String message) throws IOException {
