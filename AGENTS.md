@@ -2,7 +2,7 @@
 
 ## Shared across the Porelo repositories
 
-> **BEGIN Shared Area** · sha256 `6273b0dc00a2d23d` · changed 2026-11-07T18:02Z
+> **BEGIN Shared Area** · sha256 `34413dbf083b9fc7` · changed 2026-11-08T10:45Z
 
 Identical in every repository `project.yml` names but `porelo-parent`, which holds only the parent pom
 and no `AGENTS.md`. The markers carry the SHA-256 of the lines between them (the first 16 hex digits)
@@ -63,6 +63,8 @@ and the UTC time that text last changed; change it in the channel first, never i
 - **An agent's commit names its help in an `Assisted-by: <tool>, <model>` trailer, and an agent never
   writes a `Signed-off-by:`**: the operator vouches for the project's own commits by pushing them. A
   pull request from outside carries its author's `Signed-off-by:`, the Developer Certificate of Origin.
+- **A commit Porelo makes itself carries Porelo's own trailers, `Porelo-Change-Id` and
+  `Porelo-Signs-Anew`, and nothing else.**
 - **No commit message, changelog entry, issue or document says who asked for a change or who made it**
   - no "as the operator chose", no agent's name; it says what changed and why.
 - **A change to what ships or to what a build produces gets its changelog entry in the same commit**,
@@ -472,7 +474,7 @@ and the UTC time that text last changed; change it in the channel first, never i
   with `+`: estimates summed, the earliest start and the stack's readiness, VM time and tokens counted
   once.
 
-> **END Shared Area** · sha256 `6273b0dc00a2d23d`
+> **END Shared Area** · sha256 `34413dbf083b9fc7`
 
 ## What this repository is
 
