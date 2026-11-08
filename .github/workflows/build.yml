@@ -40,6 +40,17 @@ jobs:
             - name: The pinned GraalVM
               uses: ./.github/actions/pinned-jdk
 
+            # Publishing is switched by a variable, true where the packages are published and false where they are not;
+            # one missing or misspelt would leave them unpublished without a word.
+            - name: Whether this forge publishes
+              env:
+                  PORELO_PUBLISH: ${{ vars.PORELO_PUBLISH }}
+              run: |
+                  case "$PORELO_PUBLISH" in
+                      true | false) echo "PORELO_PUBLISH=$PORELO_PUBLISH" ;;
+                      *) echo "::error::vars.PORELO_PUBLISH is '$PORELO_PUBLISH', neither true nor false"; exit 1 ;;
+                  esac
+
             # rpmbuild for the .rpm, zlib's headers for the native image.
             - name: The packaging tools
               run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm zlib1g-dev
@@ -58,8 +69,7 @@ jobs:
                       case "$version" in *-SNAPSHOT) echo "::error::a tag on a snapshot version: $version"; exit 1 ;; esac
                       echo "channel=releases" >> "$GITHUB_OUTPUT"
                       # In the pom itself, not as -D: the rpm plugin takes the pom's own value over one given there.
-                      sed -i -e "s|<deb.version>.*</deb.version>|<deb.version>${version}</deb.version>|" \
-                          -e "s|<rpm.release>.*</rpm.release>|<rpm.release>1</rpm.release>|" server/pom.xml
+                      sed -i -e "s|<deb.version>.*</deb.version>|<deb.version>${version}</deb.version>|" server/pom.xml
                       echo "args=" >> "$GITHUB_OUTPUT"
                   else
                       case "$version" in *-SNAPSHOT) ;; *) echo "::error::a branch carries a release version: $version"; exit 1 ;; esac
@@ -77,8 +87,79 @@ jobs:
                   name: packages
                   path: |
                       server/target/*.deb
-                      server/target/rpm/*/RPMS/*/*.rpm
+                      server/target/*.rpm
                   if-no-files-found: error
+
+            # porelo-release's artifactory command, the one upload helper (porelo-buildtools' doc/publishing.md), at the
+            # version the parent names.
+            - name: The publishing tools
+              if: vars.PORELO_PUBLISH == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
+              run: ./mvnw -B -q -Pci-tools -s settings.xml -N dependency:build-classpath -Dmdep.outputFile="$RUNNER_TEMP/tools-cp.txt"
+
+            # Only what main or a release tag builds is published; a pull request's packages stay an artifact. The
+            # properties put a .deb into the channel's index: without them it is stored, never listed.
+            - name: Publish the packages
+              timeout-minutes: 20
+              if: vars.PORELO_PUBLISH == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+                  CHANNEL: ${{ steps.channel.outputs.channel }}
+              run: |
+                  set -euo pipefail
+                  art() { java -cp "$(cat "$RUNNER_TEMP/tools-cp.txt")" org.fuin.porelo.release.Main artifactory "$@"; }
+                  base="${JF_URL%/}/artifactory"
+                  # A release is uploaded once: a version already in the releases index is refused, never replaced.
+                  if [ "$CHANNEL" = releases ]; then
+                      for p in server/target/*.deb; do
+                          if curl -sfL "$base/porelo-dist-deb/dists/releases/main/binary-amd64/Packages" \
+                              | grep -qxF "Filename: pool/main/p/porelo-mcp/$(basename "$p")"; then
+                              echo "::error::$(basename "$p") is released already"; exit 1
+                          fi
+                      done
+                  fi
+                  for p in server/target/*.deb; do
+                      art put "$p" porelo-dist-deb/pool/main/p/porelo-mcp/ \
+                          "deb.distribution=${CHANNEL};deb.component=main;deb.architecture=amd64"
+                  done
+                  for p in server/target/*.rpm; do
+                      art put "$p" "porelo-dist-rpm/${CHANNEL}/"
+                  done
+
+            # Artifactory indexes after the upload, by itself and without a word when it fails, so the index is read back,
+            # as a machine installing from it reads it, until it names the very files just uploaded.
+            - name: The packages are indexed, not merely stored
+              timeout-minutes: 12
+              if: vars.PORELO_PUBLISH == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref_type == 'tag')
+              env:
+                  JF_URL: ${{ vars.JF_URL }}
+                  CHANNEL: ${{ steps.channel.outputs.channel }}
+              run: |
+                  set -euo pipefail
+                  base="${JF_URL%/}/artifactory"
+                  missing() {
+                      curl -sfL "$base/porelo-dist-deb/dists/${CHANNEL}/main/binary-amd64/Packages" > "$RUNNER_TEMP/Packages" \
+                          || : > "$RUNNER_TEMP/Packages"
+                      for p in server/target/*.deb; do
+                          grep -qxF "Filename: pool/main/p/porelo-mcp/$(basename "$p")" "$RUNNER_TEMP/Packages" \
+                              || echo "porelo-dist-deb: $(basename "$p")"
+                      done
+                      primary=$(curl -sfL "$base/porelo-dist-rpm/${CHANNEL}/repodata/repomd.xml" \
+                          | grep -o 'href="repodata/[^"]*primary\.xml\.gz"' | cut -d'"' -f2 || true)
+                      { [ -n "$primary" ] && curl -sfL "$base/porelo-dist-rpm/${CHANNEL}/$primary" | gunzip; } > "$RUNNER_TEMP/primary.xml" \
+                          || : > "$RUNNER_TEMP/primary.xml"
+                      for p in server/target/*.rpm; do
+                          grep -qF "$(basename "$p")\"" "$RUNNER_TEMP/primary.xml" || echo "porelo-dist-rpm: $(basename "$p")"
+                      done
+                  }
+                  for i in $(seq 60); do
+                      left=$(missing)
+                      [ -z "$left" ] && { echo "indexed after about $(( (i - 1) * 10 )) s"; exit 0; }
+                      sleep 10
+                  done
+                  echo "::error::uploaded, but not in the ${CHANNEL} index after ten minutes:"
+                  echo "$left"
+                  exit 1
 
             # A direct push to main never meets the pull request's check, so the push's own range is read here, by the
             # rule this commit carries. A tag checks the commit it names alone, a first commit too. The push that creates main names no start (all

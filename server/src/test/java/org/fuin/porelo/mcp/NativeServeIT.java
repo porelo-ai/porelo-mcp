@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -47,32 +48,41 @@ class NativeServeIT {
             try (OutputStream in = process.getOutputStream()) {
                 in.write((McpHttpServerTest.TOKEN + "\n").getBytes(StandardCharsets.US_ASCII));
             }
-            ServeCommandTest.Started started = new ServeCommandTest.Started(process);
-            started.awaitReady();
+            try {
+                ServeCommandTest.Started started = new ServeCommandTest.Started(process);
+                started.awaitReady();
 
-            String answer =
-                    request(
-                            socket,
-                            McpHttpServerTest.post(
-                                    McpHttpServerTest.LIST, "Bearer " + McpHttpServerTest.TOKEN));
-            String refused =
-                    request(socket, McpHttpServerTest.post(McpHttpServerTest.LIST, "Bearer wrong"));
-            process.destroy();
+                String answer =
+                        request(
+                                socket,
+                                McpHttpServerTest.post(
+                                        McpHttpServerTest.LIST,
+                                        "Bearer " + McpHttpServerTest.TOKEN));
+                String refused =
+                        request(
+                                socket,
+                                McpHttpServerTest.post(McpHttpServerTest.LIST, "Bearer wrong"));
+                process.destroy();
 
-            assertThat(McpHttpServerTest.status(answer))
-                    .as("the tools, for the own user with the token")
-                    .isEqualTo(200);
-            assertThat(answer).as("listed from the interface").contains("\"name\":\"List\"");
-            assertThat(McpHttpServerTest.status(refused)).as("a wrong token").isEqualTo(401);
-            assertThat(process.waitFor(20, TimeUnit.SECONDS)).as("it exits").isTrue();
-            assertThat(process.exitValue()).as("stopped on SIGTERM").isEqualTo(0);
-            assertThat(Files.exists(socket)).as("its socket removed").isFalse();
+                assertThat(McpHttpServerTest.status(answer))
+                        .as("the tools, for the own user with the token")
+                        .isEqualTo(200);
+                assertThat(answer).as("listed from the interface").contains("\"name\":\"List\"");
+                assertThat(McpHttpServerTest.status(refused)).as("a wrong token").isEqualTo(401);
+                assertThat(process.waitFor(20, TimeUnit.SECONDS)).as("it exits").isTrue();
+                assertThat(process.exitValue()).as("stopped on SIGTERM").isEqualTo(0);
+                assertThat(Files.exists(socket)).as("its socket removed").isFalse();
+            } finally {
+                // Ended whatever an assertion above saw, so no serve outlives the test.
+                process.destroyForcibly();
+            }
         }
     }
 
-    // Harm: a native stdio that writes something else than protocol, or offers tools it should not.
+    // Harm: a native stdio that writes something else than protocol, offers tools it should not,
+    // names no version, or fails at its end.
     @Test
-    void stdioListsOnlyTheDaemonsSets() throws Exception {
+    void stdioNamesItsVersionListsOnlyTheDaemonsSetsAndEndsWithItsInput() throws Exception {
         Map<String, org.fuin.porelo.wire.varlink.VarlinkServer.Method> methods =
                 Map.of(
                         "McpMethods",
@@ -96,18 +106,38 @@ class NativeServeIT {
                                     daemon.socket().toString())
                             .start();
             try (OutputStream in = process.getOutputStream()) {
-                in.write(
-                        (ContractToolsTest.request(1, "tools/list", Map.of()) + "\n")
-                                .getBytes(StandardCharsets.UTF_8));
+                String initialize =
+                        ContractToolsTest.request(
+                                1,
+                                "initialize",
+                                Map.of(
+                                        "protocolVersion",
+                                        "2025-11-25",
+                                        "capabilities",
+                                        Map.of(),
+                                        "clientInfo",
+                                        Map.of("name", "test", "version", "0")));
+                String list = ContractToolsTest.request(2, "tools/list", Map.of());
+                in.write((initialize + "\n" + list + "\n").getBytes(StandardCharsets.UTF_8));
             }
             String out =
                     new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
             assertThat(process.waitFor(20, TimeUnit.SECONDS)).as("it ends with its input").isTrue();
-            assertThat(out.lines().toList()).as("one line of protocol").hasSize(1);
+            assertThat(process.exitValue()).as("and exits 0 then").isZero();
+            List<String> lines = out.lines().toList();
+            assertThat(lines).as("one line of protocol per request").hasSize(2);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> initialized =
+                    (Map<String, Object>) org.fuin.porelo.wire.Json.parseDecimals(lines.get(0));
             @SuppressWarnings("unchecked")
             Map<String, Object> answer =
-                    (Map<String, Object>) org.fuin.porelo.wire.Json.parseDecimals(out.strip());
+                    (Map<String, Object>) org.fuin.porelo.wire.Json.parseDecimals(lines.get(1));
+            assertThat(
+                            ((Map<?, ?>) ((Map<?, ?>) initialized.get("result")).get("serverInfo"))
+                                    .get("version"))
+                    .as("the version the build gave it")
+                    .isEqualTo(System.getProperty("mcp.version"));
             assertThat(StdioCommandTest.toolNames(answer))
                     .as("the reading set alone")
                     .containsExactly("List");

@@ -14,17 +14,20 @@
     <properties>
         <!-- 0.5.1 on: Json.parseDecimals, so a number passes through exactly as it came. -->
         <porelo-wire.version>0.5.1-SNAPSHOT</porelo-wire.version>
-        <!-- The version without -SNAPSHOT, as the packages name it; PackagesIT holds it to the project's. -->
+        <!-- The version without -SNAPSHOT, as the packages name it; check-package-version holds both packages to the
+             project's version, so a value left behind here fails the build. -->
         <package.version>0.1.0</package.version>
         <!-- Named as porelo names its snapshots; CI sets the run and clears the local suffix. -->
         <porelo.snapshot.run>0</porelo.snapshot.run>
         <porelo.snapshot.suffix>+local.${maven.build.timestamp}</porelo.snapshot.suffix>
+        <!-- Both packages' version; a tag's build writes the release here. The RPM's release is always 1. -->
         <deb.version>${package.version}~snapshot.${porelo.snapshot.run}${porelo.snapshot.suffix}</deb.version>
-        <rpm.release>snapshot.${porelo.snapshot.run}</rpm.release>
-        <!-- The newest glibc and zlib symbol versions the native executable needs (measured with objdump -T), for the DEB;
-             PackagesIT checks both packages against the executable built. -->
+        <!-- The newest glibc and zlib symbol versions the native executable needs, which the DEB declares and
+             check-linkage holds to the executable; rpmbuild reads the RPM's from the executable itself. -->
         <mcp.glibc.floor>2.34</mcp.glibc.floor>
         <mcp.zlib.floor>1.2.2</mcp.zlib.floor>
+        <!-- The oldest system supported, Debian 13's glibc, as porelo's packages name it: a floor above it is refused. -->
+        <mcp.glibc.ceiling>2.41</mcp.glibc.ceiling>
         <package.doc>/usr/share/doc/porelo-mcp</package.doc>
         <!-- What the integration tests run under -Pnative. -->
         <mcp.executable>${project.build.directory}/porelo-mcp</mcp.executable>
@@ -179,16 +182,18 @@
                                 </goals>
                                 <configuration>
                                     <name>porelo-mcp</name>
-                                    <version>${package.version}</version>
-                                    <release>${rpm.release}</release>
+                                    <version>${deb.version}</version>
+                                    <release>1</release>
+                                    <!-- Beside the DEB, where check-package-version reads both. -->
+                                    <copyTo>${project.build.directory}/porelo-mcp-${deb.version}-1.x86_64.rpm</copyTo>
                                     <license>GPL-3.0-or-later</license>
                                     <group>Development/Tools</group>
                                     <summary>Porelo's daemon contract as MCP tools</summary>
                                     <description>Offers every method of the Porelo daemon's Tasks1 interface as an MCP tool: over HTTP on a task's own Unix socket when the daemon starts it, and over stdio for a person's own MCP client.</description>
                                     <url>https://github.com/porelo-ai/porelo-mcp</url>
                                     <needarch>x86_64</needarch>
-                                    <!-- No requires of its own: rpmbuild reads every library and symbol version from the executable
-                                         itself, so the RPM's floors are the measured ones; PackagesIT checks both packages. -->
+                                    <!-- No requires of its own: rpmbuild reads every library and symbol version from the
+                                         executable itself. -->
                                     <defaultUsername>root</defaultUsername>
                                     <defaultGroupname>root</defaultGroupname>
                                     <mappings>
@@ -241,12 +246,53 @@
                         <configuration>
                             <systemPropertyVariables>
                                 <mcp.executable>${mcp.executable}</mcp.executable>
-                                <!-- The raw parts a package's version is made of, so a test can work it out
-                                     itself rather than read back deb.version or rpm.release. -->
-                                <porelo.snapshot.run>${porelo.snapshot.run}</porelo.snapshot.run>
-                                <porelo.snapshot.suffix>${porelo.snapshot.suffix}</porelo.snapshot.suffix>
+                                <mcp.version>${project.version}</mcp.version>
+                                <mcp.glibc.floor>${mcp.glibc.floor}</mcp.glibc.floor>
+                                <mcp.zlib.floor>${mcp.zlib.floor}</mcp.zlib.floor>
                             </systemPropertyVariables>
                         </configuration>
+                    </plugin>
+                    <!-- The shared checks of porelo-release, on what this build packed. -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>check-linkage</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <includeProjectDependencies>false</includeProjectDependencies>
+                                    <includePluginDependencies>true</includePluginDependencies>
+                                    <executableDependency>
+                                        <groupId>org.fuin.porelo</groupId>
+                                        <artifactId>porelo-release</artifactId>
+                                    </executableDependency>
+                                    <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main check-linkage --declare libc.so.6=GLIBC:${mcp.glibc.floor} --declare libz.so.1=ZLIB:${mcp.zlib.floor} --ceiling GLIBC=${mcp.glibc.ceiling} ${mcp.executable}</commandlineArgs>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>check-package-version</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <includeProjectDependencies>false</includeProjectDependencies>
+                                    <includePluginDependencies>true</includePluginDependencies>
+                                    <executableDependency>
+                                        <groupId>org.fuin.porelo</groupId>
+                                        <artifactId>porelo-release</artifactId>
+                                    </executableDependency>
+                                    <!-- The run with its local suffix, which CI leaves empty: a local build's packages say it too. -->
+                                    <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main check-package-version porelo-mcp ${project.version} ${porelo.snapshot.run}${porelo.snapshot.suffix} ${project.build.directory}</commandlineArgs>
+                                </configuration>
+                            </execution>
+                        </executions>
                     </plugin>
                 </plugins>
             </build>

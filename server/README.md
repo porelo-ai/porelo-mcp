@@ -8,4 +8,4 @@ and it never parses the `porelo` command's output or reads Porelo's files.
 - Its tests run against a stand-in daemon serving the real interface, kept under `src/test/resources/varlink` with the
   porelo commit it was taken from.
 - Its `native` profile builds the native executable and its DEB and RPM; `PackagesIT` and `NativeServeIT` run what
-  they install.
+  they install, and porelo-release's `check-linkage` and `check-package-version` read what they declare.
