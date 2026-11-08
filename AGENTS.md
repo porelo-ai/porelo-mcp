@@ -2,7 +2,7 @@
 
 ## Shared across the Porelo repositories
 
-> **BEGIN Shared Area** · sha256 `59acd5398f5eb693` · changed 2026-11-08T11:47Z
+> **BEGIN Shared Area** · sha256 `5009d5e8d774cb08` · changed 2026-11-08T14:09Z
 
 Identical in every repository `project.yml` names but `porelo-parent`, which holds only the parent pom
 and no `AGENTS.md`. The markers carry the SHA-256 of the lines between them (the first 16 hex digits)
@@ -201,7 +201,7 @@ and the UTC time that text last changed; change it in the channel first, never i
   required individual red run. The handover names every issue, the tested top commit, and which checks
   ran where with what result.
 - **After a failed run, rerun the failed step and the tests of the area the fix changes; the unit
-  suite still runs whole.** The handover names the final commit, what was rerun and why that covers
+  suite still runs whole once before the handover.** The handover names the final commit, what was rerun and why that covers
   the fix, and keeps checks passed earlier apart from those rerun on it.
 - **A small change is tried on a local VM only as far as the change needs, not by a full run of
   the whole flow.** The complete run is the workflow's on GitHub afterwards.
@@ -247,8 +247,9 @@ and the UTC time that text last changed; change it in the channel first, never i
   git runs with `GIT_CONFIG_GLOBAL=/dev/null`), not on wall-clock time, and not on a pinned version
   written into it - it reads the version from the build. A test that calls git runs from a clone of
   the tested commit, never an archive; transfer a git bundle when needed.
-- **Before a commit, the full suite runs as its own step and its result is read.** A commit is gated
-  on the exit code, never on grepped output, and never chained onto the test run.
+- **During the work, a commit runs the tests it changed and those of the modules built on what it
+  changed; the full suite runs once before a hand-over, as its own step, and its result is read.**
+  Both are gated on the exit code, never on grepped output, and never chained onto the test run.
 - **A change handed over says which test levels actually ran** - unit tests, local VM, rented
   machine - never which ought to have. A change to documents or issues only needs the tests tagged
   `documents`, which run alone; every test that reads a document carries that tag, and a test fails
@@ -390,7 +391,14 @@ and the UTC time that text last changed; change it in the channel first, never i
   issue gets this reading once, and the result of a reading is never read again: its findings are fixed,
   each with a test seen to fail first, and the issue is handed over. A grave finding the fix does not
   settle becomes an issue of its own, without a reading of its own; smaller ones gather in one issue of
-  the repository.
+  the repository. The reading starts as soon as the code it reads stands, beside other work, never
+  after another part's fixes.
+- **An issue of size M or larger, or one that touches a trust boundary, has its plan read before it
+  is built**: a reviewer of another model reads the issue and the files it names, asking only what a
+  caller could do that the plan does not forbid, and the build takes the answers. This reading of the
+  plan is not the reading of the code, which still follows once.
+- **What a repository's readings keep finding goes into its build briefs as a checklist**, so the
+  builder checks it before handing over.
 - **Fail closed and loud**: when a dependency is unreachable, a key is unknown or a check cannot run,
   stop with a non-zero exit code and say why; inside a program, an exception that says why does the
   same. Never silently do less.
@@ -477,7 +485,7 @@ and the UTC time that text last changed; change it in the channel first, never i
   with `+`: estimates summed, the earliest start and the stack's readiness, VM time and tokens counted
   once.
 
-> **END Shared Area** · sha256 `59acd5398f5eb693`
+> **END Shared Area** · sha256 `5009d5e8d774cb08`
 
 ## What this repository is
 
