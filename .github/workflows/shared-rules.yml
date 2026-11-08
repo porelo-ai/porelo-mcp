@@ -17,7 +17,7 @@ permissions:
 jobs:
     check:
         runs-on: ubuntu-24.04
-        timeout-minutes: 10
+        timeout-minutes: 25
         steps:
             # Every commit, so the scheduled run reads main's last day without a second fetch.
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
