@@ -3,6 +3,12 @@
 The open tasks of `porelo-mcp`, grouped by state; the order within a group is the priority. The rules for an issue, and
 who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A group with nothing in it is left out.
 
+## Backlog
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="mc09"></a>[MC09](MC09-A-Start-s-Result-As-The-Tool-s-Text.md) | S | porelo B515 | A `Start` with a prompt shows the run's result as the tool's text, once porelo's B515 gives it. |
+
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -17,7 +23,6 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="mc09"></a>[MC09](MC09-A-Start-s-Result-As-The-Tool-s-Text.md) | - | - | A `Start` with a prompt shows the run's result as the tool's text, once porelo's B515 gives it. |
 | <a id="mc10"></a>[MC10](MC10-The-Package-Version-In-ServerInfo.md) | - | - | `serverInfo.version` names the version the packages carry, so a client can tell which build it talks to. |
 
 ## Finished
