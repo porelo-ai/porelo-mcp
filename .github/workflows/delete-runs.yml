@@ -1,0 +1,86 @@
+# Deletes this repository's workflow run history up to a date, to keep the Actions list readable.
+name: Delete old runs
+
+on:
+    workflow_dispatch:
+        inputs:
+            before:
+                description: 'Delete runs from this day and earlier (YYYY-MM-DD)'
+                required: true
+            delete:
+                description: 'Actually delete. Left unticked, this only says what would go.'
+                type: boolean
+                default: false
+
+# Nothing for the workflow as a whole: the one permission this needs is given to the one job that deletes.
+permissions: {}
+
+jobs:
+    delete:
+        name: Runs up to ${{ inputs.before }}
+        # The only permission this needs, and it is the one that lets it delete.
+        permissions:
+            actions: write
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        steps:
+            - name: What would go, and go if asked
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  BEFORE: ${{ inputs.before }}
+                  DELETE: ${{ inputs.delete }}
+              run: |
+                  set -euo pipefail
+
+                  # A malformed date matches nothing and reads as "there was nothing to delete".
+                  if ! [[ "$BEFORE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                      echo "::error::'$BEFORE' is not a date. Use YYYY-MM-DD."
+                      exit 1
+                  fi
+
+                  gh api --paginate "/repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" \
+                      --jq '.workflow_runs[] | [.id, (.created_at | split("T")[0]), .status, .name] | @tsv' \
+                      > all.tsv
+
+                  # Dates in this form compare as text exactly as they do in time, and the named day
+                  # counts as "equal". This run is excluded: it cannot delete itself while it runs.
+                  awk -F'\t' -v b="$BEFORE" -v self="$GITHUB_RUN_ID" \
+                      '$2 <= b && $1 != self' all.tsv > doomed.tsv || true
+
+                  total=$(wc -l < all.tsv)
+                  count=$(wc -l < doomed.tsv)
+                  echo "$count of $total run(s) are from $BEFORE or earlier"
+                  echo "## Runs up to $BEFORE" >> "$GITHUB_STEP_SUMMARY"
+                  echo "" >> "$GITHUB_STEP_SUMMARY"
+                  echo "\`$count\` of \`$total\` runs match." >> "$GITHUB_STEP_SUMMARY"
+
+                  if [ "$count" -eq 0 ]; then
+                      echo "nothing to do" >> "$GITHUB_STEP_SUMMARY"
+                      exit 0
+                  fi
+
+                  cut -f2,4 doomed.tsv | sort | uniq -c | sort -rn | head -20
+
+                  if [ "$DELETE" != "true" ]; then
+                      echo "nothing was deleted - run again with 'delete' ticked"
+                      echo "" >> "$GITHUB_STEP_SUMMARY"
+                      echo "**Nothing was deleted.** Run again with \`delete\` ticked." >> "$GITHUB_STEP_SUMMARY"
+                      exit 0
+                  fi
+
+                  # A run still in progress answers 409 rather than deleting; that is a warning, not a
+                  # failure, because the rest of the sweep is still worth doing.
+                  gone=0
+                  kept=0
+                  while IFS=$'\t' read -r id day status name; do
+                      if gh api -X DELETE "/repos/$GITHUB_REPOSITORY/actions/runs/$id" >/dev/null 2>&1; then
+                          gone=$((gone + 1))
+                      else
+                          kept=$((kept + 1))
+                          echo "::warning::could not delete run $id from $day ($status, $name)"
+                      fi
+                  done < doomed.tsv
+
+                  echo "deleted $gone, could not delete $kept"
+                  echo "" >> "$GITHUB_STEP_SUMMARY"
+                  echo "Deleted \`$gone\`, could not delete \`$kept\`." >> "$GITHUB_STEP_SUMMARY"

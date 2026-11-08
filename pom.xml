@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+         child.project.url.inherit.append.path="false">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.fuin.porelo</groupId>
+        <artifactId>porelo-parent</artifactId>
+        <version>0.2.2-SNAPSHOT</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>org.fuin.porelo</groupId>
+    <artifactId>porelo-mcp-root</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>Porelo MCP</name>
+    <description>Porelo's daemon contract offered as MCP tools</description>
+
+    <!-- Without the inherit.append.path attributes Maven appends each child's artifactId to these. -->
+    <url>https://github.com/porelo-ai/porelo-mcp/</url>
+
+    <scm child.scm.url.inherit.append.path="false"
+         child.scm.connection.inherit.append.path="false"
+         child.scm.developerConnection.inherit.append.path="false">
+        <url>https://github.com/porelo-ai/porelo-mcp/</url>
+        <connection>scm:git:git://github.com/porelo-ai/porelo-mcp.git</connection>
+        <developerConnection>scm:git:git@github.com:porelo-ai/porelo-mcp.git</developerConnection>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/porelo-ai/porelo-mcp/issues</url>
+    </issueManagement>
+
+    <properties>
+        <!-- The command line 'exec:exec@machines' gives porelo-machines, such as 'jdk'. -->
+        <machines.args></machines.args>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- JUnit's first, as porelo-parent says: an import here comes before the parent's, and the fuin BOM below
+                 pins an older JUnit. -->
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.fuin</groupId>
+                <artifactId>bom</artifactId>
+                <version>${fuin-bom.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <modules>
+        <module>server</module>
+    </modules>
+
+    <build>
+
+        <plugins>
+
+            <plugin>
+                <groupId>dev.logchange</groupId>
+                <artifactId>logchange-maven-plugin</artifactId>
+                <version>${logchange-maven-plugin.version}</version>
+                <inherited>false</inherited>
+                <executions>
+                    <execution>
+                        <id>logchange-lint</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>lint</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- The shared code style, from porelo-parent: google-java-format (AOSP) and shfmt, checked in validate;
+                 'spotless:apply' formats. -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+            </plugin>
+
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-maven-plugin.version}</version>
+                <inherited>false</inherited>
+                <executions>
+                    <!-- Any porelo-machines command, in a JVM of its own: the pinned GraalVM for a CI job. -->
+                    <execution>
+                        <id>machines</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <includeProjectDependencies>false</includeProjectDependencies>
+                            <includePluginDependencies>true</includePluginDependencies>
+                            <executableDependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-machines</artifactId>
+                            </executableDependency>
+                            <commandlineArgs>-classpath %classpath org.fuin.porelo.machines.Main ${machines.args}</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <!-- Any other porelo-release command, in a JVM of its own: it exits with the command's code. -->
+                    <execution>
+                        <id>release</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <includeProjectDependencies>false</includeProjectDependencies>
+                            <includePluginDependencies>true</includePluginDependencies>
+                            <executableDependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-release</artifactId>
+                            </executableDependency>
+                            <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main ${release.args}</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <!-- A release depends only on releases: run on a tag, on the effective pom
+                         'help:effective-pom -Doutput=target/effective-pom.xml' wrote. -->
+                    <execution>
+                        <id>check-releases</id>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <includeProjectDependencies>false</includeProjectDependencies>
+                            <includePluginDependencies>true</includePluginDependencies>
+                            <executableDependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-release</artifactId>
+                            </executableDependency>
+                            <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main check-releases ${maven.multiModuleProjectDirectory}/target/effective-pom.xml --requires org.fuin.porelo:porelo-release</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <!-- Every workflow step pinned by commit. -->
+                    <execution>
+                        <id>check-actions</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <includeProjectDependencies>false</includeProjectDependencies>
+                            <includePluginDependencies>true</includePluginDependencies>
+                            <executableDependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-release</artifactId>
+                            </executableDependency>
+                            <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main check-actions ${maven.multiModuleProjectDirectory}/.github</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <!-- The shared block of AGENTS.md carries the hash of its text, so a copy edited on its own fails. -->
+                    <execution>
+                        <id>check-shared</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <includeProjectDependencies>false</includeProjectDependencies>
+                            <includePluginDependencies>true</includePluginDependencies>
+                            <executableDependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-release</artifactId>
+                            </executableDependency>
+                            <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main check-shared ${maven.multiModuleProjectDirectory}/AGENTS.md ${maven.multiModuleProjectDirectory}/.editorconfig</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <!-- No file cites an issue in a way that goes stale once the issue is finished and deleted. -->
+                    <execution>
+                        <id>check-citations</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <includeProjectDependencies>false</includeProjectDependencies>
+                            <includePluginDependencies>true</includePluginDependencies>
+                            <executableDependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-release</artifactId>
+                            </executableDependency>
+                            <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main check-citations ${maven.multiModuleProjectDirectory}</commandlineArgs>
+                        </configuration>
+                    </execution>
+                    <!-- Every module has a README.md beside its pom.xml, linking its submodules. -->
+                    <execution>
+                        <id>check-readmes</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <includeProjectDependencies>false</includeProjectDependencies>
+                            <includePluginDependencies>true</includePluginDependencies>
+                            <executableDependency>
+                                <groupId>org.fuin.porelo</groupId>
+                                <artifactId>porelo-release</artifactId>
+                            </executableDependency>
+                            <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main check-readmes ${maven.multiModuleProjectDirectory}</commandlineArgs>
+                        </configuration>
+                    </execution>
+                </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>org.fuin.porelo</groupId>
+                        <artifactId>porelo-machines</artifactId>
+                        <version>${porelo.buildtools.version}</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.fuin.porelo</groupId>
+                        <artifactId>porelo-release</artifactId>
+                        <version>${porelo.buildtools.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+
+        </plugins>
+
+    </build>
+
+    <profiles>
+        <profile>
+            <!-- A change to documents or issues: only the tests that read them, tagged so. -->
+            <id>documents</id>
+            <properties>
+                <groups>documents</groups>
+            </properties>
+        </profile>
+    </profiles>
+
+</project>

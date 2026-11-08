@@ -1,0 +1,51 @@
+# The code style of every Porelo repository, for the IDE. Identical in every repository and
+# compared with the copy porelo-release carries by its check-shared; it is changed in the channel
+# first, never in one copy. How Java is formatted is decided by google-java-format in its AOSP
+# style, which the build checks; this file says what that formatter does not, and every other
+# language's indent and line length. A section for a further file type goes before the
+# wrappers', which stay last.
+root = true
+
+# Every file: four spaces, never a tab - YAML, XML, Gherkin, Gradle, Python and shell included.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# Google Java Style, AOSP variant: four spaces, 100 columns.
+[*.java]
+max_line_length = 100
+
+# Two trailing spaces are a line break.
+[*.md]
+trim_trailing_whitespace = false
+
+# The one exception to four spaces: what dart format writes.
+[*.dart]
+indent_size = 2
+max_line_length = 120
+
+[*.py]
+max_line_length = 100
+
+# Ansible's own convention, two spaces, where the host playbook's collection keeps its YAML; every other
+# YAML file keeps four.
+[{roles,playbooks,molecule,extensions}/**.{yml,yaml}]
+indent_size = 2
+
+[galaxy.yml]
+indent_size = 2
+
+# The Maven and Gradle wrappers' scripts stay exactly as their tools generate them, so updating a
+# wrapper stays a plain replacement of its files.
+[{mvnw,mvnw.cmd,gradlew,gradlew.bat}]
+indent_style = unset
+indent_size = unset
+trim_trailing_whitespace = unset
+insert_final_newline = unset
+
+[{mvnw.cmd,gradlew.bat}]
+end_of_line = unset

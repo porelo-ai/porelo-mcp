@@ -1,0 +1,15 @@
+# Dot files and directories are not checked in - which is what makes a local '.AGENTS.md'
+# private and a shared 'AGENTS.md' tracked, without either needing a rule of its own. The
+# exceptions below are what a Java build needs. Identical in every repository of this product.
+.*
+!.gitignore
+!.editorconfig
+!.git-blame-ignore-revs
+!.gitkeep
+!.mvn
+# Each agent's own local repository prefix, so what one agent installs is not what another resolves.
+.mvn/maven.config
+!.github
+target
+*.log
+*.iml

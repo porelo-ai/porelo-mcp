@@ -1,0 +1,57 @@
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                      http://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+    <!-- Used by CI. A developer's own ~/.m2/settings.xml is not consulted when the build passes
+         "-s settings.xml", so anything a build needs has to be here. -->
+
+    <profiles>
+
+        <profile>
+
+            <id>standard</id>
+
+            <repositories>
+
+                <repository>
+                    <id>central.sonatype.snapshots</id>
+                    <name>Central Sonatype Snapshot Repository</name>
+                    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                    <snapshots>
+                        <updatePolicy>always</updatePolicy>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </repository>
+
+            </repositories>
+
+            <pluginRepositories>
+
+                <pluginRepository>
+                    <id>central.sonatype.snapshots</id>
+                    <name>Central Sonatype Snapshot Repository</name>
+                    <url>https://central.sonatype.com/repository/maven-snapshots/</url>
+                    <releases>
+                        <enabled>false</enabled>
+                    </releases>
+                    <snapshots>
+                        <updatePolicy>always</updatePolicy>
+                        <enabled>true</enabled>
+                    </snapshots>
+                </pluginRepository>
+
+            </pluginRepositories>
+
+        </profile>
+
+    </profiles>
+
+    <activeProfiles>
+        <activeProfile>standard</activeProfile>
+    </activeProfiles>
+
+</settings>

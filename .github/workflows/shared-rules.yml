@@ -1,0 +1,75 @@
+# Checks the documents: AGENTS.md's shared block against its hash, no citation of an issue that goes stale, every
+# module saying what it is, and the tests that read documents. Of its own because the build ignores a change to
+# Markdown alone, which is exactly the change this is for, and it leases no machine.
+name: Shared rules check
+
+# Once a day, not on a push: every hand-over runs the same checks locally on its exact commit first, and a run per
+# push spent build minutes on what was already known. 03:17 UTC lies outside the hours the repositories are worked in.
+on:
+    schedule:
+        - cron: '17 3 * * *'
+    pull_request:
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+jobs:
+    check:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 10
+        steps:
+            # Every commit, so the scheduled run reads main's last day without a second fetch.
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+                  fetch-depth: 0
+
+            - name: The pinned GraalVM
+              uses: ./.github/actions/pinned-jdk
+
+            # The root's validate runs check-actions, check-shared, check-citations and check-readmes, with porelo-release
+            # from Central; the tests tagged documents follow it, so a change to a page runs every test that reads one.
+            - name: The documents
+              run: ./mvnw -B -U -s settings.xml -Pdocuments test
+
+            # A pull request's own commits held to the shared rule on commit messages. One from outside - from another
+            # repository, or opened by someone not a member - also carries its author's Signed-off-by: on each commit,
+            # the Developer Certificate of Origin; Dependabot's and GitHub's own commits are exempt by the author and
+            # committer they record. The repository's own workflow opens its pull requests from a branch only a holder
+            # of write access can push, so those are from inside, though GitHub names their author a contributor. The
+            # host's forge names no author association at all; there too only write access pushes a branch of the same
+            # repository, and only the person's approval merges it, so such a pull request is from inside.
+            - name: The pull request's commit messages
+              if: github.event_name == 'pull_request'
+              env:
+                  PR_BASE: ${{ github.event.pull_request.base.sha }}
+                  PR_HEAD: ${{ github.event.pull_request.head.sha }}
+                  PR_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+                  PR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+                  PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+                  PR_SERVER: ${{ github.server_url }}
+              run: |
+                  set -eu
+                  # The checkout holds every commit, both sides of the merge among them, so nothing is fetched again.
+                  outside=--outside
+                  if [ "$PR_REPOSITORY" = "$GITHUB_REPOSITORY" ]; then
+                      case "$PR_ASSOCIATION" in OWNER | MEMBER) outside= ;; esac
+                      if [ "$PR_AUTHOR" = 'github-actions[bot]' ]; then
+                          outside=
+                      fi
+                      if [ "$PR_SERVER" != 'https://github.com' ]; then
+                          outside=
+                      fi
+                  fi
+                  ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits $PR_BASE..$PR_HEAD $outside"
+
+            # A push the Build never starts, of [skip ci] commits or of documents alone, meets no check of its own, so
+            # each day main's commits of the last 26 hours are read, with two hours over the schedule's own day.
+            - name: Main's commits of the last day
+              if: github.event_name == 'schedule'
+              run: |
+                  set -eu
+                  # A repository younger than that is read whole, its first commit too.
+                  start=$(git rev-list -1 --before='26 hours ago' HEAD)
+                  ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits ${start:+$start..}HEAD"

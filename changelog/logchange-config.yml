@@ -1,0 +1,39 @@
+# logchange configuration: https://github.com/logchange/logchange#configuration
+changelog:
+    heading: ""
+    labels:
+        unreleased: unreleased
+        important_notes: Important notes
+        types:
+            entryTypesLabels:
+                security: Security
+                other: Other
+                removed: Removed
+                added: Added
+                deprecated: Deprecated
+                fixed: Fixed
+                dependency_update: Dependency updates
+                changed: Changed
+            number_of_changes:
+                singular: change
+                plural: changes
+            security: Security
+            other: Other
+            removed: Removed
+            added: Added
+            deprecated: Deprecated
+            fixed: Fixed
+            dependency_update: Dependency updates
+            changed: Changed
+        configuration:
+            heading: Configuration changes
+            type: Type
+            actions:
+                add: Added
+                update: Updated
+                delete: Deleted
+            with_default_value: with default value
+            description: Description
+    templates:
+        entry: "${prefix}${title} ${merge_requests} ${issues} ${links} ${authors}"
+        author: "([${name}](${url}) @${nick})"

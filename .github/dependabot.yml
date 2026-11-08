@@ -1,0 +1,21 @@
+# What keeps the pinned workflow steps current. Every 'uses:' names a commit with its version beside
+# it (the release tool's check-actions refuses anything else); a pin nobody moves rots, and trades a
+# live risk for a stale one. Dependabot opens one reviewed pull request a week with the new commit,
+# the version comment and the release notes. Nothing merges it automatically.
+version: 2
+updates:
+    - package-ecosystem: github-actions
+      # The workflows, and the composite actions beside them.
+      directories:
+          - "/"
+          - "/.github/actions/*"
+      schedule:
+          interval: weekly
+      # A release becomes old enough to take after three days, as every other pin here.
+      cooldown:
+          default-days: 3
+      groups:
+          actions:
+              patterns: ["*"]
+      commit-message:
+          prefix: "Move the pinned workflow steps"

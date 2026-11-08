@@ -1,0 +1,65 @@
+# The GraalVM the CI snapshots pin, installed on a GitHub runner and checked against its digest - so a
+# job compiles with the same JDK a leg builds with, and never with whatever release a moving name ('25')
+# resolved to that day. The pin lives in porelo-buildtools, in the published porelo-machines, and is moved
+# by that repository's Machines workflow once a release is three days old.
+#
+# Bootstrapped from the runner's own Java 25 (JAVA_HOME_25_X64), which runs porelo-machines once to
+# install the pinned one; nothing that JDK compiles is published. Needs the repository checked out.
+#
+# Also the shfmt porelo-parent pins (shfmt.version), which Spotless checks every *.sh against in validate and does not
+# download: first, since even the GraalVM's installation runs 'validate', and the tree holds shell scripts.
+name: Pinned GraalVM
+description: Installs the GraalVM porelo-machines pins, checked against its digest, as JAVA_HOME for the rest of the job, and the pinned shfmt on the PATH.
+runs:
+    using: composite
+    steps:
+        # What setup-graalvm's 'cache: maven' did.
+        - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          with:
+              path: ~/.m2/repository
+              key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+              restore-keys: maven-${{ runner.os }}-
+
+        # The wrapper's Maven, fetched once per pin rather than by every job with one download and no retry.
+        - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          with:
+              path: ~/.m2/wrapper
+              key: maven-wrapper-${{ runner.os }}-${{ hashFiles('.mvn/wrapper/maven-wrapper.properties') }}
+
+        # Spotless refuses an shfmt of another version than the parent pins, so a moved pin fails here loudly.
+        - name: Install the pinned shfmt
+          shell: bash
+          run: |
+              set -eu
+              VERSION=3.12.0
+              mkdir -p "$RUNNER_TEMP/bin"
+              curl -fsSL --retry 5 --retry-all-errors -o "$RUNNER_TEMP/bin/shfmt" \
+                  "https://github.com/mvdan/sh/releases/download/v$VERSION/shfmt_v${VERSION}_linux_amd64"
+              echo "d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea  $RUNNER_TEMP/bin/shfmt" | sha256sum -c -
+              chmod +x "$RUNNER_TEMP/bin/shfmt"
+              echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+        - name: Install the pinned GraalVM
+          shell: bash
+          run: |
+              set -eu
+              if [ -z "${JAVA_HOME_25_X64:-}" ]; then
+                  echo "::error::this runner has no Java 25 to install the pinned GraalVM with (JAVA_HOME_25_X64)"
+                  exit 1
+              fi
+              export JAVA_HOME="$JAVA_HOME_25_X64"
+              # The wrapper checks its Maven against distributionSha256Sum and installs it only whole, so asking again
+              # after a failed fetch is a retry; a cached one answers at once.
+              for attempt in 1 2 3 4 5; do
+                  if ./mvnw -B -q --version >/dev/null; then
+                      break
+                  fi
+                  if [ "$attempt" = 5 ]; then
+                      echo "::error::the wrapper could not fetch its Maven in 5 attempts"
+                      exit 1
+                  fi
+                  echo "::warning::the wrapper's Maven did not arrive (attempt $attempt); trying again"
+                  sleep $((attempt * 10))
+              done
+              # porelo-machines from Central at the root pom's porelo.buildtools.version, run by that Java.
+              ./mvnw -B -q -U -s settings.xml -N exec:exec@machines -Dmachines.args="jdk --github"

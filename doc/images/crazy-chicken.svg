@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="160" viewBox="0 0 640 160" role="img" aria-labelledby="t d">
+  <title id="t">Crazy chicken - just hatched</title>
+  <desc id="d">A chick bursting out of its cracked egg, beside the words Crazy chicken, just hatched, anything may change any day.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe9e4"/>
+      <stop offset="1" stop-color="#ffb3a3"/>
+    </linearGradient>
+    <clipPath id="card"><rect width="640" height="160" rx="18"/></clipPath>
+    <pattern id="stripes" width="24" height="24" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <rect width="12" height="24" fill="#2b2b2b"/>
+      <rect x="12" width="12" height="24" fill="#ff5a36"/>
+    </pattern>
+  </defs>
+  <g clip-path="url(#card)">
+    <rect width="640" height="160" fill="url(#sky)"/>
+    <!-- motion lines -->
+    <path d="M24 40 l 22 6 M20 64 l 24 0 M26 88 l 20 -6" stroke="#e0533a" stroke-width="4" stroke-linecap="round"/>
+    <path d="M170 34 l 20 -8 M176 58 l 22 0 M172 82 l 20 8" stroke="#e0533a" stroke-width="4" stroke-linecap="round"/>
+    <!-- the lower eggshell -->
+    <path d="M58 104 L70 92 L82 104 L94 90 L106 104 L118 92 L130 104 L142 94 L150 106 C 150 134, 130 146, 104 146 C 78 146, 56 134, 58 104 Z" fill="#fffaf0" stroke="#d8c7a8" stroke-width="3"/>
+    <!-- the chick -->
+    <g transform="translate(104 70)">
+      <ellipse cx="0" cy="20" rx="34" ry="28" fill="#ffd23f"/>
+      <path d="M-30 8 C -48 -2, -50 18, -34 22 Z" fill="#ffc300"/>
+      <path d="M30 8 C 48 -6, 54 16, 34 22 Z" fill="#ffc300"/>
+      <circle cx="0" cy="-12" r="22" fill="#ffd23f"/>
+      <!-- the tuft -->
+      <path d="M-6 -32 c -4 -10, 4 -14, 4 -4 M2 -34 c 2 -12, 10 -10, 4 0 M8 -32 c 8 -8, 14 -2, 4 2" stroke="#ffb000" stroke-width="3" stroke-linecap="round" fill="none"/>
+      <!-- the wild eyes -->
+      <circle cx="-9" cy="-14" r="7" fill="#ffffff"/>
+      <circle cx="10" cy="-15" r="8" fill="#ffffff"/>
+      <circle cx="-7" cy="-12" r="3.2" fill="#1b1b1b"/>
+      <circle cx="13" cy="-18" r="3.6" fill="#1b1b1b"/>
+      <path d="M-4 -2 L12 0 L-2 6 Z" fill="#f08a00"/>
+      <!-- the shell cap it threw off -->
+      <path d="M-30 -44 L-20 -36 L-10 -44 L0 -36 L8 -44 C 4 -58, -24 -60, -30 -44 Z" fill="#fffaf0" stroke="#d8c7a8" stroke-width="2.5" transform="rotate(-24 -10 -44)"/>
+    </g>
+    <!-- the words -->
+    <text x="232" y="66" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="40" font-weight="800" letter-spacing="2" fill="#2b2b2b">CRAZY CHICKEN</text>
+    <text x="234" y="98" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="600" fill="#b8341b">Just hatched</text>
+    <text x="234" y="124" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="16" fill="#4a4a4a">Anything may change any day - try it, never build on it</text>
+    <!-- the warning tape -->
+    <rect y="144" width="640" height="16" fill="url(#stripes)"/>
+  </g>
+  <rect x="1" y="1" width="638" height="158" rx="17" fill="none" stroke="#d2462a" stroke-width="2"/>
+</svg>

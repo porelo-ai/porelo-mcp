@@ -1,0 +1,51 @@
+# The light check of a pull request that changes only workflows, Dependabot's action moves above all: every step pinned,
+# and every workflow a file GitHub can read. It builds nothing, rents nothing, publishes nothing and holds no secret, so
+# the operator can merge an action move on it alone. The Build leaves such a pull request to it.
+name: Workflow check
+
+on:
+    pull_request:
+        branches: ['**']
+        paths: ['.github/**']
+
+permissions:
+    contents: read
+
+jobs:
+    check:
+        name: Workflow check
+        runs-on: ubuntu-26.04
+        timeout-minutes: 10
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - name: The pinned GraalVM
+              uses: ./.github/actions/pinned-jdk
+
+            - name: Every step pinned to a commit
+              run: ./mvnw -B -q -s settings.xml -N exec:exec@check-actions
+
+            # A file that does not load, or names no trigger or no job, is a workflow GitHub would not run.
+            - name: Every workflow loads, with its triggers and jobs
+              run: |
+                  python3 - <<'PY'
+                  import pathlib, sys, yaml
+                  bad = []
+                  for path in sorted(pathlib.Path(".github/workflows").glob("*.y*ml")):
+                      try:
+                          loaded = yaml.safe_load(path.read_text())
+                      except yaml.YAMLError as error:
+                          bad.append(f"{path}: {error}")
+                          continue
+                      # YAML 1.1 reads the key 'on' as true.
+                      triggers = loaded.get("on", loaded.get(True)) if isinstance(loaded, dict) else None
+                      if not triggers or not isinstance(loaded.get("jobs"), dict) or not loaded["jobs"]:
+                          bad.append(f"{path}: names no trigger or no job")
+                      else:
+                          print(f"OK    {path}")
+                  for line in bad:
+                      print(f"ERROR {line}", file=sys.stderr)
+                  sys.exit(1 if bad else 0)
+                  PY

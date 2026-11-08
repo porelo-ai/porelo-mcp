@@ -1,0 +1,9 @@
+# Changes here wait for the owner's review.
+/.github/                                        @michael-schnell
+/AGENTS.md                                       @michael-schnell
+/CLAUDE.md                                       @michael-schnell
+/pom.xml                                         @michael-schnell
+**/pom.xml                                       @michael-schnell
+/mvnw                                            @michael-schnell
+/.mvn/                                           @michael-schnell
+/settings.xml                                    @michael-schnell

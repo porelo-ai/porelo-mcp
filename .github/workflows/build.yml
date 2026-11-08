@@ -1,0 +1,93 @@
+# Builds porelo-mcp on every change: compiled, unit tests run, and the shared checks of the root's validate.
+# Nothing goes to Maven Central: porelo-mcp is a native executable in packages of its own, and nothing builds against an
+# artifact here. Against porelo-parent as a snapshot while it is one (-U takes the newest), as the shared rules allow.
+name: Build
+
+on:
+    push:
+        branches: [main]
+        tags: ['v*']
+        # A change to documents alone is checked locally before the hand-over and by the Shared rules check once a day.
+        # Workflows alone build nothing either: an action's move is checked by its pull request, and the next push with
+        # content builds with it.
+        paths-ignore: ['**.md', 'doc/**', 'issues/**', '.github/**']
+    pull_request:
+        # A workflow-only change is the Workflow check's, a change to documents alone the Shared rules check's.
+        paths-ignore: ['**.md', 'doc/**', 'issues/**', '.github/**']
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+    build:
+        name: Build and test
+        # Pinned, not ubuntu-latest.
+        runs-on: ubuntu-24.04
+        # A run takes about 3 minutes; a slow runner must end, not run for GitHub's six hours.
+        timeout-minutes: 20
+        steps:
+            # Every commit, so the pushed range can be read.
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+                  fetch-depth: 0
+
+            - name: The pinned GraalVM
+              uses: ./.github/actions/pinned-jdk
+
+            # validate runs check-actions, check-shared, check-citations and check-readmes.
+            - name: Build, unit tests and the shared checks
+              run: ./mvnw -B -U -s settings.xml verify
+
+            # A direct push to main never meets the pull request's check, so the push's own range is read here, by the
+            # rule this commit carries. A tag checks the commit it names alone, a first commit too. The push that creates main names no start (all
+            # zeros), so main's whole history is read. Another new branch or a branch pushed over has no start this checkout
+            # holds, so its range starts at main; main itself cannot be pushed over.
+            - name: The pushed commits' messages
+              if: github.event_name == 'push'
+              env:
+                  PUSH_BEFORE: ${{ github.event.before }}
+              run: |
+                  set -eu
+                  case "$PUSH_BEFORE" in
+                      '') echo "::error::the push names no commit it started from"; exit 1 ;;
+                  esac
+                  range="$PUSH_BEFORE..$GITHUB_SHA"
+                  if [ "$GITHUB_REF_TYPE" = tag ]; then
+                      range="$GITHUB_SHA^!"
+                  elif [ "$GITHUB_REF" = refs/heads/main ] && [ -z "${PUSH_BEFORE//0/}" ]; then
+                      range="$GITHUB_SHA"
+                  elif ! git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+                      if [ "$GITHUB_REF" = refs/heads/main ]; then
+                          echo "::error::main moved from $PUSH_BEFORE, a commit this checkout does not hold"
+                          exit 1
+                      fi
+                      range="origin/main..$GITHUB_SHA"
+                  fi
+                  ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits $range"
+
+            # A release is refused unless the tag is exactly 'v' plus the version it carries, and that is no snapshot.
+            - name: The tag names this commit's release
+              if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+              run: |
+                  set -eu
+                  VERSION="$(sed -n 's|^    <version>\(.*\)</version>$|\1|p' pom.xml | head -1)"
+                  [ -n "$VERSION" ] || { echo "::error::no version in pom.xml"; exit 1; }
+                  [ "$GITHUB_REF_NAME" = "v$VERSION" ] \
+                      || { echo "::error::the tag $GITHUB_REF_NAME is not v$VERSION, the version this commit carries"; exit 1; }
+                  case "$VERSION" in
+                      *-SNAPSHOT) echo "::error::$VERSION is a snapshot; a release carries its own version"; exit 1 ;;
+                  esac
+
+            # Every -SNAPSHOT in the effective pom - dependencies, the imported BOMs, plugins and their dependencies such as
+            # porelo-release, inactive profiles too - refuses the tag.
+            - name: A release depends only on releases
+              if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+              run: |
+                  ./mvnw -B -s settings.xml help:effective-pom -Doutput=target/effective-pom.xml
+                  ./mvnw -B -s settings.xml -N exec:exec@check-releases
