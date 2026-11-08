@@ -1,6 +1,6 @@
 # MC03 — MCP Over HTTP On A Unix Socket For A Task
 
-**Status:** Analyzed; blocked by [MC02](README.md#mc02).
+**Status:** Backlog; blocked by [MC02](README.md#mc02).
 **Size:** M - the `serve` command against the binding in `doc/binding.md`, a contract porelo reads.
 
 **What must be true.** `porelo-mcp serve`, started by the daemon for one task, serves the tools over MCP streamable

@@ -1,6 +1,6 @@
 # MC01 — The MCP SDK Chosen By Measurement
 
-**Status:** Analyzed
+**Status:** Implementing
 **Size:** S - one spike and a measured comparison, no contract.
 
 **What must be true.** The MCP layer of `porelo-mcp` is built on a Java MCP SDK or on its own small JSON-RPC layer,
