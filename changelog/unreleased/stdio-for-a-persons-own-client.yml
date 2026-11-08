@@ -1,0 +1,2 @@
+title: Serve a person's own MCP client over stdio with `porelo-mcp stdio`, offering only the daemon's reading methods and the writing ones the person named, never a destructive one, and naming at start each offered method that stands for the person's own judgement.
+type: added

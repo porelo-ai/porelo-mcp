@@ -67,9 +67,13 @@ public final class Main {
         if (args.length > 0 && args[0].equals("--check")) {
             return check(List.of(args).subList(1, args.length), out, err, environment);
         }
+        if (args.length > 0 && args[0].equals("stdio")) {
+            return stdio(List.of(args).subList(1, args.length), in, out, err, environment);
+        }
         if (args.length == 0 || !args[0].equals("serve")) {
             err.println(
                     "porelo-mcp: usage: porelo-mcp serve --task <name> --socket <path> --daemon-socket <path>");
+            err.println("       porelo-mcp stdio [--daemon-socket <path>]");
             err.println("       porelo-mcp --check [--daemon-socket <path>]");
             return REFUSED;
         }
@@ -163,26 +167,11 @@ public final class Main {
     static int check(
             List<String> args, PrintStream out, PrintStream err, Map<String, String> environment) {
         final Path socket;
-        if (args.isEmpty()) {
-            final String runtime = environment.get("XDG_RUNTIME_DIR");
-            if (runtime == null || runtime.isEmpty()) {
-                err.println(
-                        "porelo-mcp: XDG_RUNTIME_DIR is unset or empty, so the daemon's socket is unknown;"
-                                + " name it with --daemon-socket");
-                return NO_DAEMON;
-            }
-            socket = Path.of(runtime, "porelo", "porelod.sock");
-        } else {
-            try {
-                socket =
-                        Path.of(
-                                java.util.Objects.requireNonNull(
-                                        options(args, Set.of("--daemon-socket"))
-                                                .get("--daemon-socket")));
-            } catch (StartRefused ex) {
-                err.println("porelo-mcp: " + ex.getMessage());
-                return REFUSED;
-            }
+        try {
+            socket = personsSocket(args, environment);
+        } catch (StartRefused ex) {
+            err.println("porelo-mcp: " + ex.getMessage());
+            return ex instanceof NoDaemonSocket ? NO_DAEMON : REFUSED;
         }
         final SocketDaemon daemon = new SocketDaemon(socket);
         final Object version;
@@ -221,6 +210,103 @@ public final class Main {
         }
         out.flush();
         return STOPPED;
+    }
+
+    /**
+     * Serves a person's own MCP client over standard input and output, one JSON-RPC message per
+     * line, with only the tools the daemon's sets allow; nothing but protocol goes to standard
+     * output.
+     */
+    static int stdio(
+            List<String> args,
+            InputStream in,
+            PrintStream out,
+            PrintStream err,
+            Map<String, String> environment) {
+        final Path socket;
+        try {
+            socket = personsSocket(args, environment);
+        } catch (StartRefused ex) {
+            err.println("porelo-mcp: " + ex.getMessage());
+            return ex instanceof NoDaemonSocket ? NO_DAEMON : REFUSED;
+        }
+        final SocketDaemon daemon = new SocketDaemon(socket);
+        final List<Tool> tools;
+        try {
+            tools = Tool.of(VarlinkIdl.parse(daemon.describe(INTERFACE)));
+        } catch (VarlinkException | IllegalArgumentException ex) {
+            err.println(
+                    "porelo-mcp: the daemon at "
+                            + socket
+                            + " gave no interface: "
+                            + ex.getMessage());
+            return NO_DAEMON;
+        }
+        McpMethods sets;
+        try {
+            sets = McpMethods.of(daemon);
+        } catch (VarlinkException ex) {
+            if (ex.getErrorName() == null) {
+                err.println(
+                        "porelo-mcp: the daemon at "
+                                + socket
+                                + " was not reached: "
+                                + ex.getMessage());
+                return NO_DAEMON;
+            }
+            err.println(
+                    "porelo-mcp: no tools offered: the daemon answered McpMethods with "
+                            + ex.getErrorName());
+            sets = McpMethods.NONE;
+        } catch (IllegalArgumentException ex) {
+            err.println("porelo-mcp: no tools offered: " + ex.getMessage());
+            sets = McpMethods.NONE;
+        }
+        final List<Tool> offered = sets.offered(tools);
+        for (final Tool tool : offered) {
+            if (sets.judgement().contains(tool.name())) {
+                err.println(
+                        "porelo-mcp: your client may call "
+                                + tool.name()
+                                + ", which stands for your own judgement, on your behalf");
+            }
+        }
+        err.flush();
+        final McpSession session = new McpSession(offered, daemon, version());
+        try {
+            StdioLines.serve(session, in, out);
+        } catch (IOException ex) {
+            err.println("porelo-mcp: standard input or output failed: " + ex.getMessage());
+            return FAILED;
+        }
+        return STOPPED;
+    }
+
+    /** No socket is named and none can be derived: the daemon cannot be reached. */
+    static final class NoDaemonSocket extends StartRefused {
+
+        private static final long serialVersionUID = 1L;
+
+        NoDaemonSocket(String message) {
+            super(message);
+        }
+    }
+
+    /** The person's own daemon socket: as given, or by default under {@code XDG_RUNTIME_DIR}. */
+    static Path personsSocket(List<String> args, Map<String, String> environment)
+            throws StartRefused {
+        if (!args.isEmpty()) {
+            return Path.of(
+                    java.util.Objects.requireNonNull(
+                            options(args, Set.of("--daemon-socket")).get("--daemon-socket")));
+        }
+        final String runtime = environment.get("XDG_RUNTIME_DIR");
+        if (runtime == null || runtime.isEmpty()) {
+            throw new NoDaemonSocket(
+                    "XDG_RUNTIME_DIR is unset or empty, so the daemon's socket is unknown;"
+                            + " name it with --daemon-socket");
+        }
+        return Path.of(runtime, "porelo", "porelod.sock");
     }
 
     /** Reads {@code --name value} pairs, each of the given names exactly once. */

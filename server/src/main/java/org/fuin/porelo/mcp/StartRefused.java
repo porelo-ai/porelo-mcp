@@ -4,7 +4,7 @@ package org.fuin.porelo.mcp;
  * A start refused before anything is bound: wrong arguments, a refused token, or a socket place
  * refused.
  */
-public final class StartRefused extends Exception {
+public class StartRefused extends Exception {
 
     private static final long serialVersionUID = 1L;
 

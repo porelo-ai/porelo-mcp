@@ -90,7 +90,8 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
   on that list. When one is offered, `porelo-mcp` says at start, on standard error, which of them the client may call.
 - The sets come from the daemon at run time, by `org.fuin.porelo.Tasks1.McpMethods() -> (reading: []string, writing:
   []string, never: []string, judgement: []string)`: `reading`, `never` and `judgement` are porelo's own, named per
-  method; `writing` is the person's own list minus `never`. `porelo-mcp` offers `reading` and `writing`, and refuses
+  method; `writing` is the person's own list minus `never`. Each name is a method's name without the interface, as a
+  tool is named. `porelo-mcp` offers `reading` and `writing`, and refuses
   every name in `never` itself as well, so a fault on one side alone opens nothing. A daemon that does not answer
   `McpMethods` gets no tools offered.
 
