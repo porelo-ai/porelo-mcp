@@ -1,0 +1,26 @@
+# The states of work, in board order, and their phases. One file for stories and every repository's issue index:
+# porelo-project keeps it as stories/workflow.yml, every other repository a byte-identical copy as issues/workflow.yml.
+# closed: the work is over. measured: moving an issue into this state needs a stage record.
+states:
+  - {name: Idea, closed: false}
+  - {name: Accepted, closed: false}
+  - {name: In analysis, closed: false}
+  - {name: Analyzed, closed: false}
+  - {name: Under estimation, closed: false}
+  - {name: Estimated, closed: false}
+  - {name: Backlog, closed: false}
+  - {name: Implementing, closed: false, measured: true}
+  - {name: Reading, closed: false, measured: true}
+  - {name: Reworking, closed: false, measured: true}
+  - {name: Review, closed: false, measured: true}
+  - {name: Rework, closed: false}
+  - {name: Finishing, closed: false, measured: true}
+  - {name: Finished, closed: true, measured: true}
+  - {name: Rejected, closed: true}
+phases:
+  - {name: Ideas, states: [Idea, Accepted]}
+  - {name: Analysis, states: [In analysis, Analyzed]}
+  - {name: Estimation, states: [Under estimation, Estimated]}
+  - {name: Backlog, states: [Backlog]}
+  - {name: Build, states: [Implementing, Reading, Reworking, Review, Rework]}
+  - {name: Done, states: [Finishing, Finished, Rejected]}
