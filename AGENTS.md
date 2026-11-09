@@ -2,7 +2,7 @@
 
 ## Shared across the Porelo repositories
 
-> **BEGIN Shared Area** · sha256 `a10e8e42ec48a8d7` · changed 2026-11-09T07:16Z
+> **BEGIN Shared Area** · sha256 `bee934162474b6aa` · changed 2026-11-09T16:04Z
 
 Identical in every repository `project.yml` names but `porelo-parent`, which holds only the parent pom
 and no `AGENTS.md`. The markers carry the SHA-256 of the lines between them (the first 16 hex digits)
@@ -234,6 +234,12 @@ and the UTC time that text last changed; change it in the channel first, never i
 - **A test that waits on an agent, a model or any paid service fails fast on a loop**: it stops as
   soon as the same failure repeats, instead of waiting out its time, and names what repeated. A run
   seen looping is reported at once, so the operator can cancel it.
+- **Tests follow the pyramid: many unit tests, fewer integration tests, the fewest end-to-end runs.** A flow - its
+  states, choices, limits and failure paths - is built as plain logic behind small interfaces and proven by unit tests
+  over fakes that run in seconds; the real pieces are then tested narrowly on that core, and only what nothing lower
+  can show goes to an integration test, a VM or a rented machine.
+- **A plan names each test's level before the build; one that needs a VM to see a flow work is planned wrong.** A
+  defect found high up is reproduced at the lowest level that can show it, and that test stays.
 - **A test guards what can do harm, not everything that can be wrong.** Tests go where a fault costs
   something: a secret or a credential that leaks, a check that can be passed around, data lost or
   written twice, work that leaves without review, a command that does the wrong thing, a contract
@@ -527,7 +533,7 @@ and the UTC time that text last changed; change it in the channel first, never i
   with `+`: estimates summed, the earliest start and the stack's readiness, VM time and tokens counted
   once.
 
-> **END Shared Area** · sha256 `a10e8e42ec48a8d7`
+> **END Shared Area** · sha256 `bee934162474b6aa`
 
 ## What this repository is
 
