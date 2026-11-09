@@ -14,6 +14,12 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | <a id="mc04"></a>[MC04](MC04-Stdio-For-A-Person-s-Own-Client.md) | S | - | `porelo-mcp stdio` for a person's own MCP client on the host: the reading methods, writing ones only from the person's own list, destructive ones never. |
 | <a id="mc09"></a>[MC09](MC09-A-Start-s-Result-As-The-Tool-s-Text.md) | S | - | A `Start` with a prompt shows the run's result as the tool's text, once porelo's B515 gives it. |
 
+## Accepted
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="mc11"></a>[MC11](MC11-Tests-That-Follow-The-Pyramid.md) | - | - | The tests follow the pyramid: the never-set guard and the token's refusals unit-tested, stdio, serve and the session over a fake daemon in process, deadlines on an injected clock; today 29 % unit, 64 % integration. |
+
 ## Idea
 
 | # | Size | Blocked by | What it covers |
