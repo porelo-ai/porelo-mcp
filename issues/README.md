@@ -8,13 +8,18 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="mc10"></a>[MC10](MC10-The-Package-Version-In-ServerInfo.md) | - | - | `serverInfo.version` names the version the packages carry, so a client can tell which build it talks to. |
-| <a id="mc12"></a>[MC12](MC12-Third-Party-Notices-In-The-Packages.md) | - | - | The DEB and the RPM ship the full license and notice texts of everything compiled into the native executable, as one `THIRD-PARTY-NOTICES` file from the shared generator. |
 
 ## Accepted
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="mc11"></a>[MC11](MC11-Tests-That-Follow-The-Pyramid.md) | - | - | The tests follow the pyramid: the never-set guard and the token's refusals unit-tested, stdio, serve and the session over a fake daemon in process, deadlines on an injected clock; today 29 % unit, 64 % integration. |
+
+## Implementing
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="mc12"></a>[MC12](MC12-Third-Party-Notices-In-The-Packages.md) | M | - | The DEB and the RPM ship the full license and notice texts of everything compiled into the native executable, as one `THIRD-PARTY-NOTICES` file from the shared generator. |
 
 ## Review
 
