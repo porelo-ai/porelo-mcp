@@ -2,7 +2,7 @@
 
 ## Shared across the Porelo repositories
 
-> **BEGIN Shared Area** · sha256 `bee934162474b6aa` · changed 2026-11-09T16:04Z
+> **BEGIN Shared Area** · sha256 `cd873c99d74b9f90` · changed 2026-11-10T12:22Z
 
 Identical in every repository `project.yml` names but `porelo-parent`, which holds only the parent pom
 and no `AGENTS.md`. The markers carry the SHA-256 of the lines between them (the first 16 hex digits)
@@ -85,7 +85,8 @@ and the UTC time that text last changed; change it in the channel first, never i
   issues or documents alone may end with one.
 - **After an authorized push, follow the repository’s build through every job to its final result
   and verify its `head_sha`.** Report the run ID and commit, with success or the failed step and
-  relevant error.
+  relevant error. A failed run on main is read from the failed job's log the moment it ends, before any
+  other work.
 - **A branch is brought up to `main` by rebasing it, never by merging `main` in**, and takes another's
   work by cherry-pick or new commits on the current tip; conflicts are resolved commit by commit, and the
   whole suite runs on the rebased head before the hand-over.
@@ -213,7 +214,12 @@ and the UTC time that text last changed; change it in the channel first, never i
   ran where with what result.
 - **After a failed run, rerun the failed step and the tests of the area the fix changes; the unit
   suite still runs whole once before the handover.** The handover names the final commit, what was rerun and why that covers
-  the fix, and keeps checks passed earlier apart from those rerun on it.
+  the fix, and keeps checks passed earlier apart from those rerun on it. A failure in program logic is
+  reproduced and fixed in the JVM through the same entry point; a native build or a VM is used only for a
+  failure that depends on the image or the machine, and then only the affected executable and the failing
+  scenario.
+- **A change to what a command answers searches the acceptance features for the old answer**; a line it
+  alters checks the answer's meaning, not its text, in the same commit.
 - **A small change is tried on a local VM only as far as the change needs, not by a full run of
   the whole flow.** The complete run is the workflow's on GitHub afterwards.
 - **A workflow step replayed locally runs on a clean build (`clean`, or a fresh clone), as the
@@ -533,7 +539,7 @@ and the UTC time that text last changed; change it in the channel first, never i
   with `+`: estimates summed, the earliest start and the stack's readiness, VM time and tokens counted
   once.
 
-> **END Shared Area** · sha256 `bee934162474b6aa`
+> **END Shared Area** · sha256 `cd873c99d74b9f90`
 
 ## What this repository is
 
