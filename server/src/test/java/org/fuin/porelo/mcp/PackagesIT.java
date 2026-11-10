@@ -30,6 +30,14 @@ class PackagesIT {
                     "libc.so.6", "libc6 (>= " + System.getProperty("mcp.glibc.floor") + ")",
                     "libz.so.1", "zlib1g (>= 1:" + System.getProperty("mcp.zlib.floor") + ")");
 
+    /** Each library the executable may link, with the RPM's requirement on it at its floor. */
+    private static final Map<String, String> RPM_DECLARED =
+            Map.of(
+                    "libc.so.6",
+                            "libc.so.6(GLIBC_" + System.getProperty("mcp.glibc.floor") + ")(64bit)",
+                    "libz.so.1",
+                            "libz.so.1(ZLIB_" + System.getProperty("mcp.zlib.floor") + ")(64bit)");
+
     /** What x86-64 itself guarantees: nothing beyond it may be asked for. */
     private static final String BASELINE = "CX8, CMOV, FXSR, MMX, SSE, SSE2";
 
@@ -126,10 +134,9 @@ class PackagesIT {
                 .containsExactlyInAnyOrderElementsOf(expected);
     }
 
-    // Harm: a package another name, another machine, or no bill and license, so it is not the one
-    // published.
+    // Harm: a package another name, another machine, or no bill, so it is not the one published.
     @Test
-    void bothPackagesAreNamedForThisProgramOnX8664AndCarryItsBillAndLicense() throws Exception {
+    void bothPackagesAreNamedForThisProgramOnX8664AndCarryItsBill() throws Exception {
         String debFields = run("dpkg-deb", "-f", deb().toString(), "Package", "Architecture");
         String rpmFields =
                 run("rpm", "-qp", "--queryformat", "\n%{NAME} %{ARCH}", rpm().toString());
@@ -143,7 +150,7 @@ class PackagesIT {
                 .as("the RPM's name and machine")
                 .isEqualTo("porelo-mcp x86_64");
         assertThat(debFiles)
-                .as("the DEB's executable, bill and license")
+                .as("the DEB's executable, bill and copyright")
                 .contains(
                         "./usr/bin/porelo-mcp",
                         "./usr/share/doc/porelo-mcp/sbom.cdx.json",
@@ -156,47 +163,77 @@ class PackagesIT {
     // Harm: a package that ships third-party code without the license texts that code asks to
     // travel with it.
     @Test
-    void bothPackagesShipTheNoticesOfEveryComponentInTheBillAndOfTheRuntime() throws Exception {
-        Path unpacked = Files.createTempDirectory(directory, "deb");
-        run("dpkg-deb", "-x", deb().toString(), unpacked.toString());
-        Path doc = unpacked.resolve("usr/share/doc/porelo-mcp");
-        String notices = Files.readString(doc.resolve("THIRD-PARTY-NOTICES"));
-        String licenses = run("rpm", "-qLp", rpm().toString());
+    void bothPackagesShipTheFullNoticesOfEveryComponentInTheirBillAndOfTheRuntime()
+            throws Exception {
+        Path debDoc = unpackDeb().resolve("usr/share/doc/porelo-mcp");
+        Path rpmRoot = unpackRpm();
+        String notices = Files.readString(debDoc.resolve("THIRD-PARTY-NOTICES"));
+        List<String> components = billedComponents(debDoc.resolve("sbom.cdx.json"));
 
-        assertThat(Files.readString(doc.resolve("copyright")))
+        assertThat(Files.readString(debDoc.resolve("copyright")))
                 .as("the DEB's copyright names the notices")
                 .contains("/usr/share/doc/porelo-mcp/THIRD-PARTY-NOTICES");
-        assertThat(billedComponents()).as("the bill names the compiled-in jars").isNotEmpty();
-        for (String component : billedComponents()) {
-            assertThat(notices)
-                    .as("a section for %s, from the bill", component)
-                    .contains("\n" + component + "\n");
+        assertThat(components)
+                .as("the bill's components, each as group:artifact:version")
+                .extracting(c -> c.substring(0, c.lastIndexOf(':')))
+                .containsExactlyInAnyOrder("org.fuin.porelo:porelo-wire", "org.jspecify:jspecify");
+        assertThat(notices)
+                .as("the full Apache-2.0 text the bill names for them")
+                .contains("TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION");
+        for (String component : components) {
+            assertThat(section(notices, component))
+                    .as("the section for %s gives Apache-2.0", component)
+                    .contains("--- standard text of Apache-2.0");
         }
-        assertThat(notices).as("a section for the runtime").contains("\nGraalVM runtime ");
-        assertThat(licenses.lines().toList())
+        assertThat(notices.substring(notices.indexOf("\nGraalVM runtime ") + 1))
+                .as("the runtime's section, with its GPLv2 and the Classpath exception")
+                .startsWith("GraalVM runtime ")
+                .contains("GNU GENERAL PUBLIC LICENSE", "CLASSPATH EXCEPTION");
+        assertThat(stdout("rpm", "-qLp", rpm().toString()).lines().toList())
                 .as("the RPM's %license files")
-                .contains(
+                .containsExactlyInAnyOrder(
                         "/usr/share/licenses/porelo-mcp/LICENSE",
                         "/usr/share/licenses/porelo-mcp/THIRD-PARTY-NOTICES");
+        assertThat(rpmRoot.resolve("usr/share/licenses/porelo-mcp/THIRD-PARTY-NOTICES"))
+                .as("the RPM's notices, the same as the DEB's")
+                .hasSameBinaryContentAs(debDoc.resolve("THIRD-PARTY-NOTICES"));
+        assertThat(rpmRoot.resolve("usr/share/licenses/porelo-mcp/LICENSE"))
+                .as("the RPM's LICENSE, the program's own")
+                .hasSameBinaryContentAs(Path.of("..", "LICENSE"));
     }
 
     // Harm: an RPM that installs where the executable it carries cannot start.
     @Test
-    void theRpmRequiresTheCLibraryAndZlibAtTheFloorsTheExecutableNeeds() throws Exception {
-        List<String> requires = run("rpm", "-qRp", rpm().toString()).lines().toList();
+    void theRpmRequiresExactlyTheLibrariesItsExecutableLinksAtTheDeclaredFloors() throws Exception {
+        Matcher libraries =
+                Pattern.compile("NEEDED\\s+(\\S+)")
+                        .matcher(run("objdump", "-p", fromRpm().toString()));
+        List<String> expected = new ArrayList<>();
+        while (libraries.find()) {
+            String library = libraries.group(1);
+            assertThat(RPM_DECLARED)
+                    .as("a library %s the RPM knows a requirement for", library)
+                    .containsKey(library);
+            expected.add(RPM_DECLARED.get(library));
+        }
 
+        List<String> requires =
+                stdout("rpm", "-qRp", rpm().toString())
+                        .lines()
+                        .filter(line -> !line.startsWith("rpmlib("))
+                        .toList();
+
+        assertThat(expected).as("the executable links some library").isNotEmpty();
         assertThat(requires)
-                .as("the RPM's requirements")
-                .contains(
-                        "libc.so.6(GLIBC_" + System.getProperty("mcp.glibc.floor") + ")(64bit)",
-                        "libz.so.1(ZLIB_" + System.getProperty("mcp.zlib.floor") + ")(64bit)");
+                .as("the RPM's requirements, one per linked library")
+                .containsExactlyInAnyOrderElementsOf(expected);
     }
 
-    /** Each component of the bill but the program itself, as {@code group:artifact:version}. */
-    private static List<String> billedComponents() throws IOException {
+    /** Each component the bill names but the program itself, as {@code group:artifact:version}. */
+    private static List<String> billedComponents(Path bill) throws IOException {
         Matcher purl =
                 Pattern.compile("\"purl\"\\s*:\\s*\"pkg:maven/([^/\"]+)/([^@\"]+)@([^?\"]+)")
-                        .matcher(Files.readString(TARGET.resolve("sbom.cdx.json")));
+                        .matcher(Files.readString(bill));
         List<String> components = new ArrayList<>();
         while (purl.find()) {
             if (!purl.group(2).equals("porelo-mcp")) {
@@ -206,13 +243,23 @@ class PackagesIT {
         return components;
     }
 
-    private Path fromDeb() throws Exception {
-        Path into = Files.createTempDirectory(directory, "deb");
-        run("dpkg-deb", "-x", deb().toString(), into.toString());
-        return into.resolve("usr/bin/porelo-mcp");
+    /** The notices' section of one component: its heading, up to the rule that opens the next. */
+    private static String section(String notices, String component) {
+        String rule = "=".repeat(78);
+        int start = notices.indexOf(rule + "\n" + component + "\n");
+        assertThat(start).as("a section headed %s", component).isNotNegative();
+        int body = notices.indexOf("\n" + rule + "\n", start + rule.length()) + rule.length() + 2;
+        int next = notices.indexOf("\n" + rule + "\n", body);
+        return notices.substring(start, next < 0 ? notices.length() : next);
     }
 
-    private Path fromRpm() throws Exception {
+    private Path unpackDeb() throws Exception {
+        Path into = Files.createTempDirectory(directory, "deb");
+        run("dpkg-deb", "-x", deb().toString(), into.toString());
+        return into;
+    }
+
+    private Path unpackRpm() throws Exception {
         Path into = Files.createTempDirectory(directory, "rpm");
         run(
                 "sh",
@@ -221,7 +268,15 @@ class PackagesIT {
                 "sh",
                 rpm().toAbsolutePath().toString(),
                 into.toString());
-        return into.resolve("usr/bin/porelo-mcp");
+        return into;
+    }
+
+    private Path fromDeb() throws Exception {
+        return unpackDeb().resolve("usr/bin/porelo-mcp");
+    }
+
+    private Path fromRpm() throws Exception {
+        return unpackRpm().resolve("usr/bin/porelo-mcp");
     }
 
     static Path deb() throws IOException {
@@ -245,6 +300,15 @@ class PackagesIT {
                                     new IllegalStateException(
                                             "no " + prefix + "*" + suffix + " under " + dir));
         }
+    }
+
+    /** What a command writes to standard output alone: rpm warns there of the host's own state. */
+    static String stdout(String... command) throws IOException, InterruptedException {
+        Process process =
+                new ProcessBuilder(command).redirectError(ProcessBuilder.Redirect.INHERIT).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.waitFor()).as("%s: %s", List.of(command), output).isZero();
+        return output;
     }
 
     static String run(String... command) throws IOException, InterruptedException {

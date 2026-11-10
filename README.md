@@ -27,7 +27,7 @@ The native executable and its packages, with `rpm` and zlib's headers installed:
 
 This leaves `server/target/porelo-mcp` and, beside it, the DEB and the RPM. Their integration tests run the executable
 unpacked from each package and fail when it asks for a CPU feature beyond x86-64. porelo-release's `check-linkage`
-fails the build when the executable links a library, or a symbol version, the DEB does not declare, and
+fails the build when the executable links a library, or a symbol version, the packages do not declare, and
 `check-package-version` when either package's version is not the project's.
 
 ## License

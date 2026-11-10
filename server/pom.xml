@@ -23,7 +23,7 @@
         <!-- Both packages' version; a tag's build writes the release here. The RPM's release is always 1. -->
         <deb.version>${package.version}~snapshot.${porelo.snapshot.run}${porelo.snapshot.suffix}</deb.version>
         <!-- The newest glibc and zlib symbol versions the native executable needs, which the DEB declares and
-             check-linkage holds to the executable; rpmbuild reads the RPM's from the executable itself. -->
+             check-linkage holds to the executable, and the RPM requires by name. -->
         <mcp.glibc.floor>2.34</mcp.glibc.floor>
         <mcp.zlib.floor>1.2.2</mcp.zlib.floor>
         <!-- The oldest system supported, Debian 13's glibc, as porelo's packages name it: a floor above it is refused. -->

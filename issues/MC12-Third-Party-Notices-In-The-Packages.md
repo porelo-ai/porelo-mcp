@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "MC12",
   "title": "Third-Party Notices In The Packages",
-  "state": "Implementing",
+  "state": "Review",
   "size": "M",
   "priority": "Medium",
   "rank": 2,
@@ -30,7 +30,7 @@ that every native executable carries. Their licenses ask for their texts to trav
 
 ## How it stands
 
-- Backlog (operator, 2026-11-10); building.
+- Backlog (operator, 2026-11-10); built, in Review.
 
 ## Plan
 
@@ -53,7 +53,19 @@ that every native executable carries. Their licenses ask for their texts to trav
 - The file holds the full texts for jspecify, porelo-wire and the GraalVM runtime; a dependency added to the server
   appears in it without a change here.
 
-## To be checked
+## Reading
 
-- Which license porelo-wire's published pom names, and whether the generator treats Porelo's own artifacts as third
-  party.
+A read-only reading by another model found eight points, each checked here:
+
+- Taken, each seen red by a deliberate break first: the RPM's notices were only listed, not read (now compared with the
+  DEB's, and its `LICENSE` with the program's); the bill's components were only asked to exist (now exactly porelo-wire
+  and jspecify, read from the bill inside the DEB); the notices' sections were not shown to hold texts (now the full
+  Apache-2.0 text and the runtime's GPLv2 with the Classpath exception); the RPM's requirements were not held to the
+  libraries the executable links (now one per `NEEDED` entry, as the DEB's are).
+- Taken, no test: two comments and the README still spoke of rpmbuild reading the requirements, and one test's name
+  still promised a license it no longer checked.
+- Declined: the RPM lost its `URL` (it did not: `rpm -qip` reads `https://github.com/porelo-ai/porelo-mcp/` from the
+  project's url); `provided` jars missing from the classpath (none exists, and a jar the bill names without a section
+  fails the notices test); SPDX names in the Debian `copyright` (the same as porelo's own packages, and the third
+  parties' licenses stand in one place, the notices file, rather than twice); the index's group order (the shared
+  tool's order holds until the shared rule follows it).
