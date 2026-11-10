@@ -149,11 +149,61 @@ class PackagesIT {
                         "./usr/share/doc/porelo-mcp/sbom.cdx.json",
                         "./usr/share/doc/porelo-mcp/copyright");
         assertThat(rpmFiles)
-                .as("the RPM's executable, bill and license, by RPM's name for it")
+                .as("the RPM's executable and bill")
+                .contains("/usr/bin/porelo-mcp", "/usr/share/doc/porelo-mcp/sbom.cdx.json");
+    }
+
+    // Harm: a package that ships third-party code without the license texts that code asks to
+    // travel with it.
+    @Test
+    void bothPackagesShipTheNoticesOfEveryComponentInTheBillAndOfTheRuntime() throws Exception {
+        Path unpacked = Files.createTempDirectory(directory, "deb");
+        run("dpkg-deb", "-x", deb().toString(), unpacked.toString());
+        Path doc = unpacked.resolve("usr/share/doc/porelo-mcp");
+        String notices = Files.readString(doc.resolve("THIRD-PARTY-NOTICES"));
+        String licenses = run("rpm", "-qLp", rpm().toString());
+
+        assertThat(Files.readString(doc.resolve("copyright")))
+                .as("the DEB's copyright names the notices")
+                .contains("/usr/share/doc/porelo-mcp/THIRD-PARTY-NOTICES");
+        assertThat(billedComponents()).as("the bill names the compiled-in jars").isNotEmpty();
+        for (String component : billedComponents()) {
+            assertThat(notices)
+                    .as("a section for %s, from the bill", component)
+                    .contains("\n" + component + "\n");
+        }
+        assertThat(notices).as("a section for the runtime").contains("\nGraalVM runtime ");
+        assertThat(licenses.lines().toList())
+                .as("the RPM's %license files")
                 .contains(
-                        "/usr/bin/porelo-mcp",
-                        "/usr/share/doc/porelo-mcp/sbom.cdx.json",
-                        "/usr/share/doc/porelo-mcp/LICENSE");
+                        "/usr/share/licenses/porelo-mcp/LICENSE",
+                        "/usr/share/licenses/porelo-mcp/THIRD-PARTY-NOTICES");
+    }
+
+    // Harm: an RPM that installs where the executable it carries cannot start.
+    @Test
+    void theRpmRequiresTheCLibraryAndZlibAtTheFloorsTheExecutableNeeds() throws Exception {
+        List<String> requires = run("rpm", "-qRp", rpm().toString()).lines().toList();
+
+        assertThat(requires)
+                .as("the RPM's requirements")
+                .contains(
+                        "libc.so.6(GLIBC_" + System.getProperty("mcp.glibc.floor") + ")(64bit)",
+                        "libz.so.1(ZLIB_" + System.getProperty("mcp.zlib.floor") + ")(64bit)");
+    }
+
+    /** Each component of the bill but the program itself, as {@code group:artifact:version}. */
+    private static List<String> billedComponents() throws IOException {
+        Matcher purl =
+                Pattern.compile("\"purl\"\\s*:\\s*\"pkg:maven/([^/\"]+)/([^@\"]+)@([^?\"]+)")
+                        .matcher(Files.readString(TARGET.resolve("sbom.cdx.json")));
+        List<String> components = new ArrayList<>();
+        while (purl.find()) {
+            if (!purl.group(2).equals("porelo-mcp")) {
+                components.add(purl.group(1) + ":" + purl.group(2) + ":" + purl.group(3));
+            }
+        }
+        return components;
     }
 
     private Path fromDeb() throws Exception {

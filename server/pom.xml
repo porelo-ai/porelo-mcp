@@ -118,145 +118,49 @@
                             <skipNotDeployed>false</skipNotDeployed>
                         </configuration>
                     </plugin>
-                    <plugin>
-                        <groupId>org.vafer</groupId>
-                        <artifactId>jdeb</artifactId>
-                        <executions>
-                            <execution>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>jdeb</goal>
-                                </goals>
-                                <configuration>
-                                    <deb>${project.build.directory}/porelo-mcp_${deb.version}_amd64.deb</deb>
-                                    <snapshotExpand>false</snapshotExpand>
-                                    <dataSet>
-                                        <data>
-                                            <src>${mcp.executable}</src>
-                                            <type>file</type>
-                                            <mapper>
-                                                <type>perm</type>
-                                                <prefix>/usr/bin</prefix>
-                                                <user>root</user>
-                                                <group>root</group>
-                                                <filemode>755</filemode>
-                                            </mapper>
-                                        </data>
-                                        <data>
-                                            <src>${project.build.directory}/sbom.cdx.json</src>
-                                            <type>file</type>
-                                            <mapper>
-                                                <type>perm</type>
-                                                <prefix>${package.doc}</prefix>
-                                                <user>root</user>
-                                                <group>root</group>
-                                                <filemode>644</filemode>
-                                            </mapper>
-                                        </data>
-                                        <data>
-                                            <src>${project.basedir}/../LICENSE</src>
-                                            <dst>copyright</dst>
-                                            <type>file</type>
-                                            <mapper>
-                                                <type>perm</type>
-                                                <prefix>${package.doc}</prefix>
-                                                <user>root</user>
-                                                <group>root</group>
-                                                <filemode>644</filemode>
-                                            </mapper>
-                                        </data>
-                                    </dataSet>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>rpm-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>porelo-mcp-rpm</id>
-                                <phase>package</phase>
-                                <goals>
-                                    <goal>attached-rpm</goal>
-                                </goals>
-                                <configuration>
-                                    <name>porelo-mcp</name>
-                                    <version>${deb.version}</version>
-                                    <release>1</release>
-                                    <!-- Beside the DEB, where check-package-version reads both. -->
-                                    <copyTo>${project.build.directory}/porelo-mcp-${deb.version}-1.x86_64.rpm</copyTo>
-                                    <license>GPL-3.0-or-later</license>
-                                    <group>Development/Tools</group>
-                                    <summary>Porelo's daemon contract as MCP tools</summary>
-                                    <description>Offers every method of the Porelo daemon's Tasks1 interface as an MCP tool: over HTTP on a task's own Unix socket when the daemon starts it, and over stdio for a person's own MCP client.</description>
-                                    <url>https://github.com/porelo-ai/porelo-mcp</url>
-                                    <needarch>x86_64</needarch>
-                                    <!-- No requires of its own: rpmbuild reads every library and symbol version from the
-                                         executable itself. -->
-                                    <defaultUsername>root</defaultUsername>
-                                    <defaultGroupname>root</defaultGroupname>
-                                    <mappings>
-                                        <mapping>
-                                            <directory>/usr/bin</directory>
-                                            <directoryIncluded>false</directoryIncluded>
-                                            <filemode>755</filemode>
-                                            <sources>
-                                                <source>
-                                                    <location>${mcp.executable}</location>
-                                                </source>
-                                            </sources>
-                                        </mapping>
-                                        <!-- The directory on its own: a mapping with files gives its directory the files' mode. -->
-                                        <mapping>
-                                            <directory>${package.doc}</directory>
-                                            <filemode>755</filemode>
-                                        </mapping>
-                                        <mapping>
-                                            <directory>${package.doc}</directory>
-                                            <directoryIncluded>false</directoryIncluded>
-                                            <filemode>644</filemode>
-                                            <documentation>true</documentation>
-                                            <sources>
-                                                <source>
-                                                    <location>${project.build.directory}/sbom.cdx.json</location>
-                                                </source>
-                                                <source>
-                                                    <location>${project.basedir}/../LICENSE</location>
-                                                </source>
-                                            </sources>
-                                        </mapping>
-                                    </mappings>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <!-- The integration tests run the executable from the packages, as a machine runs it. -->
+                    <!-- The runtime classpath the notices are written from. -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <artifactId>maven-dependency-plugin</artifactId>
                         <executions>
                             <execution>
+                                <id>notices-classpath</id>
+                                <phase>package</phase>
                                 <goals>
-                                    <goal>integration-test</goal>
-                                    <goal>verify</goal>
+                                    <goal>build-classpath</goal>
                                 </goals>
+                                <configuration>
+                                    <includeScope>runtime</includeScope>
+                                    <outputFile>${project.build.directory}/classpath.txt</outputFile>
+                                </configuration>
                             </execution>
                         </executions>
-                        <configuration>
-                            <systemPropertyVariables>
-                                <mcp.executable>${mcp.executable}</mcp.executable>
-                                <mcp.version>${project.version}</mcp.version>
-                                <mcp.glibc.floor>${mcp.glibc.floor}</mcp.glibc.floor>
-                                <mcp.zlib.floor>${mcp.zlib.floor}</mcp.zlib.floor>
-                            </systemPropertyVariables>
-                        </configuration>
                     </plugin>
-                    <!-- The shared checks of porelo-release, on what this build packed. -->
+                    <!-- porelo-release: the notices it writes for the packages, and its shared checks on what this build
+                         packed. -->
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>exec-maven-plugin</artifactId>
                         <executions>
+                            <!-- The license texts of what the executable compiles in, from the jars on its runtime
+                                 classpath, the bill and the JDK it is built with. -->
+                            <execution>
+                                <id>third-party-notices</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <includeProjectDependencies>false</includeProjectDependencies>
+                                    <includePluginDependencies>true</includePluginDependencies>
+                                    <executableDependency>
+                                        <groupId>org.fuin.porelo</groupId>
+                                        <artifactId>porelo-release</artifactId>
+                                    </executableDependency>
+                                    <commandlineArgs>-classpath %classpath org.fuin.porelo.release.Main third-party-notices ${project.build.directory}/classpath.txt ${project.build.directory}/sbom.cdx.json ${java.home} ${project.build.directory}/THIRD-PARTY-NOTICES</commandlineArgs>
+                                </configuration>
+                            </execution>
                             <execution>
                                 <id>check-linkage</id>
                                 <phase>verify</phase>
@@ -293,6 +197,174 @@
                                 </configuration>
                             </execution>
                         </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.vafer</groupId>
+                        <artifactId>jdeb</artifactId>
+                        <executions>
+                            <execution>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jdeb</goal>
+                                </goals>
+                                <configuration>
+                                    <deb>${project.build.directory}/porelo-mcp_${deb.version}_amd64.deb</deb>
+                                    <snapshotExpand>false</snapshotExpand>
+                                    <dataSet>
+                                        <data>
+                                            <src>${mcp.executable}</src>
+                                            <type>file</type>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>/usr/bin</prefix>
+                                                <user>root</user>
+                                                <group>root</group>
+                                                <filemode>755</filemode>
+                                            </mapper>
+                                        </data>
+                                        <data>
+                                            <src>${project.build.directory}/sbom.cdx.json</src>
+                                            <type>file</type>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>${package.doc}</prefix>
+                                                <user>root</user>
+                                                <group>root</group>
+                                                <filemode>644</filemode>
+                                            </mapper>
+                                        </data>
+                                        <data>
+                                            <src>${project.build.directory}/THIRD-PARTY-NOTICES</src>
+                                            <type>file</type>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>${package.doc}</prefix>
+                                                <user>root</user>
+                                                <group>root</group>
+                                                <filemode>644</filemode>
+                                            </mapper>
+                                        </data>
+                                        <!-- Debian Policy 12.5: names the program's license and the notices file. -->
+                                        <data>
+                                            <src>${project.basedir}/src/deb/copyright/copyright</src>
+                                            <type>file</type>
+                                            <mapper>
+                                                <type>perm</type>
+                                                <prefix>${package.doc}</prefix>
+                                                <user>root</user>
+                                                <group>root</group>
+                                                <filemode>644</filemode>
+                                            </mapper>
+                                        </data>
+                                    </dataSet>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- The plugin that can mark a file %license, so 'rpm -qL' answers; it reads no library from the
+                         executable, so the floors the DEB declares are required here by name. -->
+                    <plugin>
+                        <groupId>de.dentrassi.maven</groupId>
+                        <artifactId>rpm</artifactId>
+                        <executions>
+                            <execution>
+                                <id>porelo-mcp-rpm</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>rpm</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <packageName>porelo-mcp</packageName>
+                            <version>${deb.version}</version>
+                            <snapshotVersion>${deb.version}</snapshotVersion>
+                            <release>1</release>
+                            <!-- Otherwise a snapshot gets a timestamp release, and the RPM and the DEB disagree. -->
+                            <forceRelease>true</forceRelease>
+                            <!-- Beside the DEB, where check-package-version reads both. -->
+                            <outputFileName>porelo-mcp-${deb.version}-1.x86_64.rpm</outputFileName>
+                            <attach>false</attach>
+                            <architecture>x86_64</architecture>
+                            <license>GPL-3.0-or-later</license>
+                            <group>Development/Tools</group>
+                            <summary>Porelo's daemon contract as MCP tools</summary>
+                            <description>Offers every method of the Porelo daemon's Tasks1 interface as an MCP tool: over HTTP on a task's own Unix socket when the daemon starts it, and over stdio for a person's own MCP client.</description>
+                            <requires>
+                                <require>libc.so.6(GLIBC_${mcp.glibc.floor})(64bit)</require>
+                                <require>libz.so.1(ZLIB_${mcp.zlib.floor})(64bit)</require>
+                            </requires>
+                            <skipSigning>true</skipSigning>
+                            <entries>
+                                <!-- The package's own directories, so a removal takes them too. -->
+                                <entry>
+                                    <name>${package.doc}</name>
+                                    <directory>true</directory>
+                                    <mode>0755</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                </entry>
+                                <entry>
+                                    <name>/usr/share/licenses/porelo-mcp</name>
+                                    <directory>true</directory>
+                                    <mode>0755</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                </entry>
+                                <entry>
+                                    <name>/usr/bin/porelo-mcp</name>
+                                    <file>${mcp.executable}</file>
+                                    <mode>0755</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                </entry>
+                                <entry>
+                                    <name>${package.doc}/sbom.cdx.json</name>
+                                    <file>${project.build.directory}/sbom.cdx.json</file>
+                                    <mode>0644</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                    <documentation>true</documentation>
+                                </entry>
+                                <entry>
+                                    <name>/usr/share/licenses/porelo-mcp/LICENSE</name>
+                                    <file>${project.basedir}/../LICENSE</file>
+                                    <mode>0644</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                    <license>true</license>
+                                </entry>
+                                <entry>
+                                    <name>/usr/share/licenses/porelo-mcp/THIRD-PARTY-NOTICES</name>
+                                    <file>${project.build.directory}/THIRD-PARTY-NOTICES</file>
+                                    <mode>0644</mode>
+                                    <user>root</user>
+                                    <group>root</group>
+                                    <license>true</license>
+                                </entry>
+                            </entries>
+                        </configuration>
+                    </plugin>
+                    <!-- The integration tests run the executable from the packages, as a machine runs it. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <mcp.executable>${mcp.executable}</mcp.executable>
+                                <mcp.version>${project.version}</mcp.version>
+                                <mcp.glibc.floor>${mcp.glibc.floor}</mcp.glibc.floor>
+                                <mcp.zlib.floor>${mcp.zlib.floor}</mcp.zlib.floor>
+                            </systemPropertyVariables>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

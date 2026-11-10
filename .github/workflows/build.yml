@@ -51,7 +51,7 @@ jobs:
                       *) echo "::error::vars.PORELO_PUBLISH is '$PORELO_PUBLISH', neither true nor false"; exit 1 ;;
                   esac
 
-            # rpmbuild for the .rpm, zlib's headers for the native image.
+            # rpm to read the .rpm in the package tests, zlib's headers for the native image.
             - name: The packaging tools
               run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm zlib1g-dev
 

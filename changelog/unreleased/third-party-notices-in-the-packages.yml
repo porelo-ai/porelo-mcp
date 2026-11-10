@@ -1,0 +1,2 @@
+title: Both packages ship THIRD-PARTY-NOTICES, the full license and notice texts of everything compiled into the executable and of the GraalVM runtime - in the DEB's doc directory, named in its now machine-readable copyright file, and as a %license file in the RPM beside LICENSE.
+type: added
