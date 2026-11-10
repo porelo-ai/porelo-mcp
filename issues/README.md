@@ -31,6 +31,6 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="mc06"></a>[MC06](MC06-The-Native-Executable-In-Its-DEB-And-RPM-Packages.md) | The Native Executable In Its DEB And RPM Packages | The native executable in a DEB and an RPM package of its own, built for any x86-64 machine, checked and published by the build workflow. |
-| <a id="mc08"></a>[MC08](MC08-MCP-2026-07-28-Spoken.md) | MCP 2026-07-28 Spoken | A client that offers only MCP `2026-07-28` reaches the tools, over stdio and HTTP. |
-| <a id="mc07"></a>[MC07](MC07-Streams-As-MCP-Progress.md) | Streams As MCP Progress | A method that answers only as a stream callable as a tool, its replies as MCP progress. |
+| <a id="mc06"></a>[MC06](MC06-The-Native-Executable-In-Its-DEB-And-RPM-Packages.md) | M | - | The native executable in a DEB and an RPM package of its own, built for any x86-64 machine, checked and published by the build workflow. |
+| <a id="mc08"></a>[MC08](MC08-MCP-2026-07-28-Spoken.md) | M | - | A client that offers only MCP `2026-07-28` reaches the tools, over stdio and HTTP. |
+| <a id="mc07"></a>[MC07](MC07-Streams-As-MCP-Progress.md) | M | - | A method that answers only as a stream callable as a tool, its replies as MCP progress. |
