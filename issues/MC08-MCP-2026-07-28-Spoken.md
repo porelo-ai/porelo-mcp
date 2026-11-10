@@ -1,7 +1,20 @@
 # MC08 — MCP 2026-07-28 Spoken
 
-**Status:** Finished
-**Size:** M - a second era beside the first in the session, `server/discover`, and the HTTP headers checked against the body.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC08",
+  "title": "MCP 2026-07-28 Spoken",
+  "state": "Finished",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 2,
+  "blockedBy": [],
+  "covers": "A client that offers only MCP `2026-07-28` reaches the tools, over stdio and HTTP."
+}
+```
+
+**Why this size.** a second era beside the first in the session, `server/discover`, and the HTTP headers checked against the body.
 
 **What must be true.** An MCP client that offers only the version `2026-07-28` reaches the daemon's tools through
 `porelo-mcp`, over stdio and over HTTP, as a client of the version before it does today.

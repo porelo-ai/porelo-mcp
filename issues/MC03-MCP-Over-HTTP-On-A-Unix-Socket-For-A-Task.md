@@ -1,7 +1,20 @@
 # MC03 — MCP Over HTTP On A Unix Socket For A Task
 
-**Status:** Review
-**Size:** M - the `serve` command against the binding in `doc/binding.md`, a contract porelo reads.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC03",
+  "title": "MCP Over HTTP On A Unix Socket For A Task",
+  "state": "Review",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 3,
+  "blockedBy": [],
+  "covers": "`porelo-mcp serve` for one task: streamable HTTP on a `0600` Unix socket, the peer's uid checked, a bearer token from standard input, `ready` and the exit codes of the binding."
+}
+```
+
+**Why this size.** the `serve` command against the binding in `doc/binding.md`, a contract porelo reads.
 
 **What must be true.** `porelo-mcp serve`, started by the daemon for one task, serves the tools over MCP streamable
 HTTP on its Unix socket, to the person's own user alone and only with the token it was given, as

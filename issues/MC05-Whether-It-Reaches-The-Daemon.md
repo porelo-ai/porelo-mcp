@@ -1,7 +1,20 @@
 # MC05 — Whether It Reaches The Daemon
 
-**Status:** Review
-**Size:** S - one command reading two Varlink methods.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC05",
+  "title": "Whether It Reaches The Daemon",
+  "state": "Review",
+  "size": "S",
+  "priority": "Medium",
+  "rank": 4,
+  "blockedBy": [],
+  "covers": "`porelo-mcp --check` says whether it reaches the daemon, with its version and the methods offered."
+}
+```
+
+**Why this size.** one command reading two Varlink methods.
 
 **What must be true.** `porelo-mcp --check` tells a person or the daemon whether `porelo-mcp` reaches the daemon, with
 the daemon's version and the methods it is offered.

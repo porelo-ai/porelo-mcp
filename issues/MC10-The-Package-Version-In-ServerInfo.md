@@ -1,6 +1,18 @@
 # MC10 — The Package Version In ServerInfo
 
-**Status:** Idea
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC10",
+  "title": "The Package Version In ServerInfo",
+  "state": "Idea",
+  "size": "-",
+  "priority": "Medium",
+  "rank": 1,
+  "blockedBy": [],
+  "covers": "`serverInfo.version` names the version the packages carry, so a client can tell which build it talks to."
+}
+```
 
 **What must be true.** A client of `porelo-mcp` learns which build it talks to: `serverInfo.version`, in `initialize`
 and in every result of `2026-07-28`, names the version the packages carry, such as `0.1.0~snapshot.5`, not the

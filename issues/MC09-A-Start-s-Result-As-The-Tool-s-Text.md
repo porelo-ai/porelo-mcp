@@ -1,8 +1,20 @@
 # MC09 — A Start's Result As The Tool's Text
 
-**Status:** Review
-**Size:** S - the tool's text of a reply that carries `result`; no new method, no new rule.
-**Blocked by:** porelo's B515, on porelo's main as `0cc6e7a55`; its names are as planned.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC09",
+  "title": "A Start's Result As The Tool's Text",
+  "state": "Review",
+  "size": "S",
+  "priority": "Medium",
+  "rank": 6,
+  "blockedBy": [],
+  "covers": "A `Start` with a prompt shows the run's result as the tool's text, once porelo's B515 gives it."
+}
+```
+
+**Why this size.** the tool's text of a reply that carries `result`; no new method, no new rule.
 
 **What must be true.** An agent that calls `Start` with a prompt reads what the run answered in the tool's text,
 without knowing to call `Tail` or `Logs` after it.
@@ -13,6 +25,8 @@ The operator's test of 2026-11-08 started a task with a prompt over stdio from a
 `exitCode` 0 and an empty `output`, so the agent never saw the run's answer.
 
 ## The contract, from B515's plan
+
+porelo's B515 is on porelo's main as `0cc6e7a55`; its names are as planned.
 
 `Start`'s final reply gains `result: ?string`, at most 16 KiB; `resultKind: ?string`, `ANSWER` or `LAST_LINES`; and
 `resultCut: ?bool`. A streamed run line comes as `runLine: ?string`, apart from porelo's own `line`.

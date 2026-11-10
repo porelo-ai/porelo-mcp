@@ -1,6 +1,18 @@
 # MC11 — Tests That Follow The Pyramid
 
-**Status:** Accepted
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC11",
+  "title": "Tests That Follow The Pyramid",
+  "state": "Accepted",
+  "size": "-",
+  "priority": "Medium",
+  "rank": 1,
+  "blockedBy": [],
+  "covers": "The tests follow the pyramid: the never-set guard and the token's refusals unit-tested, stdio, serve and the session over a fake daemon in process, deadlines on an injected clock; today 29 % unit, 64 % integration."
+}
+```
 
 **What must be true.** Most of `porelo-mcp`'s tests are unit tests over a fake daemon that run in milliseconds. Fewer
 tests reach a real Unix socket or a started process, and the fewest run the native executable from its packages. Every

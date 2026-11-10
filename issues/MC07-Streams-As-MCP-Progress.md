@@ -1,7 +1,20 @@
 # MC07 — Streams As MCP Progress
 
-**Status:** Finished
-**Size:** M - streams over stdio first, a thread per streamed call, and cancelling; HTTP once the per-task side passes them.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC07",
+  "title": "Streams As MCP Progress",
+  "state": "Finished",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 3,
+  "blockedBy": [],
+  "covers": "A method that answers only as a stream callable as a tool, its replies as MCP progress."
+}
+```
+
+**Why this size.** streams over stdio first, a thread per streamed call, and cancelling; HTTP once the per-task side passes them.
 
 **What must be true.** A method of the daemon that answers only as a stream, such as watching the tasks or following a
 log, can be called as a tool, its replies reaching the agent as MCP progress until the stream ends or the agent cancels.

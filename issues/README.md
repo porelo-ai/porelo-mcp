@@ -3,6 +3,18 @@
 The open tasks of `porelo-mcp`, grouped by state; the order within a group is the priority. The rules for an issue, and
 who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A group with nothing in it is left out.
 
+## Idea
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="mc10"></a>[MC10](MC10-The-Package-Version-In-ServerInfo.md) | - | - | `serverInfo.version` names the version the packages carry, so a client can tell which build it talks to. |
+
+## Accepted
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="mc11"></a>[MC11](MC11-Tests-That-Follow-The-Pyramid.md) | - | - | The tests follow the pyramid: the never-set guard and the token's refusals unit-tested, stdio, serve and the session over a fake daemon in process, deadlines on an injected clock; today 29 % unit, 64 % integration. |
+
 ## Review
 
 | # | Size | Blocked by | What it covers |
@@ -14,22 +26,10 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | <a id="mc04"></a>[MC04](MC04-Stdio-For-A-Person-s-Own-Client.md) | S | - | `porelo-mcp stdio` for a person's own MCP client on the host: the reading methods, writing ones only from the person's own list, destructive ones never. |
 | <a id="mc09"></a>[MC09](MC09-A-Start-s-Result-As-The-Tool-s-Text.md) | S | - | A `Start` with a prompt shows the run's result as the tool's text, once porelo's B515 gives it. |
 
-## Accepted
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="mc11"></a>[MC11](MC11-Tests-That-Follow-The-Pyramid.md) | - | - | The tests follow the pyramid: the never-set guard and the token's refusals unit-tested, stdio, serve and the session over a fake daemon in process, deadlines on an injected clock; today 29 % unit, 64 % integration. |
-
-## Idea
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="mc10"></a>[MC10](MC10-The-Package-Version-In-ServerInfo.md) | - | - | `serverInfo.version` names the version the packages carry, so a client can tell which build it talks to. |
-
 ## Finished
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="mc06"></a>[MC06](MC06-The-Native-Executable-In-Its-DEB-And-RPM-Packages.md) | M | - | The native executable in a DEB and an RPM package of its own, built for any x86-64 machine, checked and published by the build workflow. |
-| <a id="mc08"></a>[MC08](MC08-MCP-2026-07-28-Spoken.md) | M | - | A client that offers only MCP `2026-07-28` reaches the tools, over stdio and HTTP. |
-| <a id="mc07"></a>[MC07](MC07-Streams-As-MCP-Progress.md) | M | - | A method that answers only as a stream callable as a tool, its replies as MCP progress. |
+| <a id="mc06"></a>[MC06](MC06-The-Native-Executable-In-Its-DEB-And-RPM-Packages.md) | The Native Executable In Its DEB And RPM Packages | The native executable in a DEB and an RPM package of its own, built for any x86-64 machine, checked and published by the build workflow. |
+| <a id="mc08"></a>[MC08](MC08-MCP-2026-07-28-Spoken.md) | MCP 2026-07-28 Spoken | A client that offers only MCP `2026-07-28` reaches the tools, over stdio and HTTP. |
+| <a id="mc07"></a>[MC07](MC07-Streams-As-MCP-Progress.md) | Streams As MCP Progress | A method that answers only as a stream callable as a tool, its replies as MCP progress. |

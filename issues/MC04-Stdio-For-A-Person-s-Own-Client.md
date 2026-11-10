@@ -1,7 +1,20 @@
 # MC04 — Stdio For A Person's Own Client
 
-**Status:** Review
-**Size:** S - one transport over the tools of [MC02](README.md#mc02), no new contract.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC04",
+  "title": "Stdio For A Person's Own Client",
+  "state": "Review",
+  "size": "S",
+  "priority": "Medium",
+  "rank": 5,
+  "blockedBy": [],
+  "covers": "`porelo-mcp stdio` for a person's own MCP client on the host: the reading methods, writing ones only from the person's own list, destructive ones never."
+}
+```
+
+**Why this size.** one transport over the tools of [MC02](README.md#mc02), no new contract.
 
 **What must be true.** A person adds `porelo-mcp stdio` to their own MCP client on the host and gets the reading tools
 of their own daemon, with their own rights; a writing tool only when they named it in their own local Porelo settings,

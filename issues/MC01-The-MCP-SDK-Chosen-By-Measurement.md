@@ -1,7 +1,20 @@
 # MC01 — The MCP SDK Chosen By Measurement
 
-**Status:** Review
-**Size:** S - one spike and a measured comparison, no contract.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC01",
+  "title": "The MCP SDK Chosen By Measurement",
+  "state": "Review",
+  "size": "S",
+  "priority": "Medium",
+  "rank": 1,
+  "blockedBy": [],
+  "covers": "The MCP layer built on a Java MCP SDK or on a small layer of its own, chosen by measurement: a layer of its own, a third of the SDK's size and an eighth of its start."
+}
+```
+
+**Why this size.** one spike and a measured comparison, no contract.
 
 **What must be true.** The MCP layer of `porelo-mcp` is built on a Java MCP SDK or on its own small JSON-RPC layer,
 chosen by measurement, and the choice is written down with the numbers it rests on.

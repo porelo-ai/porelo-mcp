@@ -1,7 +1,20 @@
 # MC02 — Tools Generated From The Daemon's Interface
 
-**Status:** Review
-**Size:** M - a Varlink interface parser, the schema mapping and the call path, with a stand-in daemon for the tests.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC02",
+  "title": "Tools Generated From The Daemon's Interface",
+  "state": "Review",
+  "size": "M",
+  "priority": "Medium",
+  "rank": 2,
+  "blockedBy": [],
+  "covers": "Every method the daemon describes in `Tasks1` an MCP tool, its schemas from the Varlink types, its answers and refusals the daemon's, tested against a stand-in daemon."
+}
+```
+
+**Why this size.** a Varlink interface parser, the schema mapping and the call path, with a stand-in daemon for the tests.
 
 **What must be true.** An agent sees every method the daemon describes in `org.fuin.porelo.Tasks1` as an MCP tool with
 an input and an output schema taken from the Varlink types, and calls it as it would the daemon: the answer and every
