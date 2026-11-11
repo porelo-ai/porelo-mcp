@@ -8,6 +8,7 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
 | <a id="mc10"></a>[MC10](MC10-The-Package-Version-In-ServerInfo.md) | - | - | `serverInfo.version` names the version the packages carry, so a client can tell which build it talks to. |
+| <a id="mc13"></a>[MC13](MC13-The-Build-s-System-Packages-From-A-Cache.md) | S | - | The build takes `rpm` and zlib's headers from a cache, or not at all, keeping only the newest entry; today they come from the Ubuntu mirrors on every run. |
 
 ## Accepted
 
