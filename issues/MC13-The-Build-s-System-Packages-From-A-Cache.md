@@ -1,7 +1,20 @@
 # MC13 — The Build's System Packages From A Cache
 
-**Status:** Review
-**Size:** S - one step of one workflow; nothing ships differently.
+```json
+{
+  "$schema": "issue-1.json",
+  "id": "MC13",
+  "title": "The Build's System Packages From A Cache",
+  "state": "Review",
+  "size": "S",
+  "priority": "Medium",
+  "rank": 7,
+  "blockedBy": [],
+  "covers": "The build checks that the runner image carries `rpm` and zlib's headers instead of fetching them from the Ubuntu mirrors on every run."
+}
+```
+
+**Why this size.** One step of one workflow; nothing ships differently.
 
 **What must be true.** The build workflow takes every download from outside that is not a Maven artifact from a cache,
 so a mirror that answers 5xx for a while does not turn a build red, and the cache never grows past the newest state.
