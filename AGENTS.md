@@ -2,7 +2,7 @@
 
 ## Shared across the Porelo repositories
 
-> **BEGIN Shared Area** · sha256 `cd873c99d74b9f90` · changed 2026-11-10T12:22Z
+> **BEGIN Shared Area** · sha256 `a4f3e67584317e27` · changed 2026-11-11T17:30Z
 
 Identical in every repository `project.yml` names but `porelo-parent`, which holds only the parent pom
 and no `AGENTS.md`. The markers carry the SHA-256 of the lines between them (the first 16 hex digits)
@@ -149,9 +149,8 @@ and the UTC time that text last changed; change it in the channel first, never i
 
   An agent never sets Accepted, Rejected, Estimated, Backlog, Rework or Finished; it proposes in the channel. A
   size or plan that grows clearly while building is said before building on.
-- **`issues/README.md` is the index, grouped by state** in this order: Review, Rework, Implementing,
-  Backlog, Analyzed, Accepted, Idea, Estimated, then Finished and Rejected last; each group a table of
-  number, size, blocked by (in this repository) and what it covers, and in *Analyzed* also the number
+- **`issues/README.md` is the index, grouped by state** in the board order of the workflow file; each
+  group a table of number, size, blocked by (in this repository) and what it covers, and in *Analyzed* also the number
   of open questions (the group's heading says the state; a note on how far it is goes into what it covers), ordered by
   what to do next; it changes in the same commit as the issue. An open task is never a TODO in code or a note in a commit message.
 - **A rejected issue's file is deleted**; its number, title and one sentence why stay as a row under
@@ -463,9 +462,11 @@ and the UTC time that text last changed; change it in the channel first, never i
   plugin, since JetBrains supports only Gradle - named with the reason in its repository's own part. A
   file that cannot be Java - `mvnw`, or a script that runs where there is no Java yet - is named in its
   repository's own part with the reason, and no repository keeps a copy of a helper another one has.
-  The one exception is `.github/actions/pinned-jdk/pinned.sh`, the rule for pinned downloads, which a
-  repository's `pinned-jdk` action copies unchanged from porelo-buildtools, since that step runs before
-  there is Java; `check-shared` refuses a copy that differs.
+  There are two exceptions. One is `.github/actions/pinned-jdk/pinned.sh`, the rule for pinned downloads,
+  which a repository's `pinned-jdk` action copies unchanged from porelo-buildtools, since that step runs
+  before there is Java; `check-shared` refuses a copy that differs. The other is porelo-planner's native
+  executable, which a CI step downloads from Artifactory, pinned by version and sha256, and runs to check
+  the repository's issues, stories, commits and pushes: a pinned download, never a copy kept in it.
 - **Maven modules that belong together - the layers of one program, its packages - are submodules of
   one module of packaging `pom` named for what they share**, so the root lists parts, not pieces.
   Grouping changes only `parent` and `relativePath`, never a `groupId` or `artifactId`.
@@ -539,7 +540,7 @@ and the UTC time that text last changed; change it in the channel first, never i
   with `+`: estimates summed, the earliest start and the stack's readiness, VM time and tokens counted
   once.
 
-> **END Shared Area** · sha256 `cd873c99d74b9f90`
+> **END Shared Area** · sha256 `a4f3e67584317e27`
 
 ## What this repository is
 
