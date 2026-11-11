@@ -26,11 +26,6 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | <a id="mc05"></a>[MC05](MC05-Whether-It-Reaches-The-Daemon.md) | S | - | `porelo-mcp --check` says whether it reaches the daemon, with its version and the methods offered. |
 | <a id="mc04"></a>[MC04](MC04-Stdio-For-A-Person-s-Own-Client.md) | S | - | `porelo-mcp stdio` for a person's own MCP client on the host: the reading methods, writing ones only from the person's own list, destructive ones never. |
 | <a id="mc09"></a>[MC09](MC09-A-Start-s-Result-As-The-Tool-s-Text.md) | S | - | A `Start` with a prompt shows the run's result as the tool's text, once porelo's B515 gives it. |
-
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
 | <a id="mc13"></a>[MC13](MC13-The-Build-s-System-Packages-From-A-Cache.md) | S | - | The build checks that the runner image carries `rpm` and zlib's headers instead of fetching them from the Ubuntu mirrors on every run. |
 
 ## Finished

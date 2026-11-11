@@ -51,9 +51,20 @@ jobs:
                       *) echo "::error::vars.PORELO_PUBLISH is '$PORELO_PUBLISH', neither true nor false"; exit 1 ;;
                   esac
 
-            # rpm to read the .rpm in the package tests, zlib's headers for the native image.
-            - name: The packaging tools
-              run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm zlib1g-dev
+            # rpm to read the .rpm in the package tests, zlib's headers for the native image: the pinned runner image
+            # carries both, so nothing is fetched from the Ubuntu mirrors, whose outages turned Builds red.
+            - name: The packaging tools, from the runner image
+              run: |
+                  set -euo pipefail
+                  missing=0
+                  for package in rpm zlib1g-dev; do
+                      status=$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null || true)
+                      if [ "$status" != "install ok installed" ]; then
+                          echo "::error::dpkg-query $package answered '$status', not 'install ok installed'"
+                          missing=1
+                      fi
+                  done
+                  exit "$missing"
 
             # main publishes snapshots and a tag a release; each refuses the other's version, so a release is never a
             # snapshot by mistake and a snapshot never takes a release's number.
