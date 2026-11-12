@@ -9,7 +9,7 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 |---|---|---|---|
 | <a id="mc10"></a>[MC10](MC10-The-Package-Version-In-ServerInfo.md) | - | - | `serverInfo.version` names the version the packages carry, so a client can tell which build it talks to. |
 
-## Analyzed
+## Estimated
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|

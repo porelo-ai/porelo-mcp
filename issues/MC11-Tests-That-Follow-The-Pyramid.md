@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "MC11",
   "title": "Tests That Follow The Pyramid",
-  "state": "Analyzed",
+  "state": "Estimated",
   "size": "M",
   "priority": "Medium",
   "rank": 1,
@@ -95,10 +95,10 @@ of test time it has now.
 - No test sleeps to wait for a deadline or a stream; the one real-deadline test per kind is named.
 - The process tests left each name what only a process can show.
 
-## Open questions
+## Decided by the operator (2026-11-12)
 
-- Is about 65 % unit tests enough for this issue, below the 70-80 % aimed at? Going further means also driving
-  `McpHttpServer`'s request handling without a socket, a seam of its own that grows the issue to L.
+- About 65 % unit tests is enough for this issue; `McpHttpServer`'s request handling keeps its socket, and the issue
+  stays M.
 
 ## To be checked
 
