@@ -5,14 +5,16 @@
   "$schema": "issue-1.json",
   "id": "MC11",
   "title": "Tests That Follow The Pyramid",
-  "state": "Accepted",
-  "size": "-",
+  "state": "Analyzed",
+  "size": "M",
   "priority": "Medium",
   "rank": 1,
   "blockedBy": [],
   "covers": "The tests follow the pyramid: the never-set guard and the token's refusals unit-tested, stdio, serve and the session over a fake daemon in process, deadlines on an injected clock; today 29 % unit, 64 % integration."
 }
 ```
+
+**Why this size.** One module, but five steps, three of them S: about a day of moving tests down behind two new seams.
 
 **What must be true.** Most of `porelo-mcp`'s tests are unit tests over a fake daemon that run in milliseconds. Fewer
 tests reach a real Unix socket or a started process, and the fewest run the native executable from its packages. Every
@@ -93,8 +95,14 @@ of test time it has now.
 - No test sleeps to wait for a deadline or a stream; the one real-deadline test per kind is named.
 - The process tests left each name what only a process can show.
 
+## Open questions
+
+- Is about 65 % unit tests enough for this issue, below the 70-80 % aimed at? Going further means also driving
+  `McpHttpServer`'s request handling without a socket, a seam of its own that grows the issue to L.
+
 ## To be checked
 
 - Whether `StdioLines.serve`'s handling of a failed standard output can be shown in process with a `PrintStream`
   whose `checkError` turns true, or needs the started JVM.
 - The measured share and time after each step, read from the surefire reports.
+- The plan's reading by another model before the build, as an issue of size M needs.
