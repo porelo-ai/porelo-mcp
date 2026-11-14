@@ -35,7 +35,7 @@ chosen by measurement, and the choice is written down with the numbers it rests 
   the MCP clients of Claude Code, Codex and agy speak today.
 - Red first, against a server reachable from other users' processes: a spike check that lists the process's socket
   descriptors (`/proc/self/fd`, `socket:[<inode>]`) and fails when any inode is in `/proc/self/net/tcp` or `tcp6`, seen
-  red once on a spike bound to loopback TCP. It moves into [MC03](README.md#mc03)'s tests.
+  red once on a spike bound to loopback TCP. It moves into the tests of `serve`.
 - The result goes to `doc/decisions.md`, opened with its index; the spike is not committed.
 
 ## Acceptance

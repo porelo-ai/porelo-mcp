@@ -33,3 +33,7 @@ fails the build when the executable links a library, or a symbol version, the pa
 ## License
 
 GPL-3.0-or-later, see [LICENSE](LICENSE).
+
+The license and notice texts of everything compiled into the native executable, the GraalVM runtime included, ship in
+both packages as `THIRD-PARTY-NOTICES`: in the DEB under `/usr/share/doc/porelo-mcp/`, named in its `copyright`, and in
+the RPM as a `%license` file under `/usr/share/licenses/porelo-mcp/`.
