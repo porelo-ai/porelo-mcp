@@ -19,6 +19,7 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="mc14"></a>[MC14](MC14-The-Docs-Say-What-The-Code-Does.md) | S | - | Every sentence of the user-facing documentation - the READMEs, `doc/` and the unreleased changelog - is borne out by the code on `main`; a doc that is wrong is fixed, a code that is wrong is filed as a bug. About 170 claims read, four findings, one confirmed and fixed, none filed as a bug. |
 | <a id="mc01"></a>[MC01](MC01-The-MCP-SDK-Chosen-By-Measurement.md) | S | - | The MCP layer built on a Java MCP SDK or on a small layer of its own, chosen by measurement: a layer of its own, a third of the SDK's size and an eighth of its start. |
 | <a id="mc02"></a>[MC02](MC02-Tools-Generated-From-The-Daemon-s-Interface.md) | M | - | Every method the daemon describes in `Tasks1` an MCP tool, its schemas from the Varlink types, its answers and refusals the daemon's, tested against a stand-in daemon. |
 | <a id="mc05"></a>[MC05](MC05-Whether-It-Reaches-The-Daemon.md) | S | - | `porelo-mcp --check` says whether it reaches the daemon, with its version and the methods offered. |
