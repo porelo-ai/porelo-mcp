@@ -2,7 +2,7 @@
 
 ## Shared across the Porelo repositories
 
-> **BEGIN Shared Area** · sha256 `a4f3e67584317e27` · changed 2026-11-11T17:30Z
+> **BEGIN Shared Area** · sha256 `af4767f35b55f60d` · changed 2026-11-14T07:46Z
 
 Identical in every repository `project.yml` names but `porelo-parent`, which holds only the parent pom
 and no `AGENTS.md`. The markers carry the SHA-256 of the lines between them (the first 16 hex digits)
@@ -100,14 +100,19 @@ and the UTC time that text last changed; change it in the channel first, never i
   sprint, release or requirement of another repository.** Only `porelo-project`'s requirements and
   plans name them, with their order and their waits (`plan/after.yml`), so a change of plan changes
   `porelo-project` alone.
-- **A new issue follows this skeleton**, and its index row is added in the same commit; *Why* and
-  *The shape* may follow *What must be true* in a larger issue:
+- **An issue's data stands in its head, the JSON block right below its heading (`issue-1.json`); the index is never
+  edited by hand.** `porelo-release issues index issues` writes it from the heads in the same commit, and
+  `porelo-release issues check issues` passes before every hand-over.
+- **A new issue follows this skeleton**; *Why* and *The shape* may follow *What must be true* in a larger issue:
 
       # <PREFIX><nn> — <Short Title>
 
-      **Status:** Idea | Accepted | Analyzed | Estimated | Backlog | Implementing | Review | Rework;
-      blocked by <number> of this repository, if so.
-      **Size:** XS | S | M | L | XL - one line why (from Analyzed on).
+      ```json
+      { "$schema": "issue-1.json", "id": "<PREFIX><nn>", "title": "<Short Title>", "state": "Idea",
+        "size": "-", "priority": "Medium", "rank": 1, "blockedBy": [], "covers": "<the index row's text>" }
+      ```
+
+      **Why this size.** One line (from Analyzed on).
 
       **What must be true.** One or two sentences, from the point of view of whoever uses it.
 
@@ -149,10 +154,9 @@ and the UTC time that text last changed; change it in the channel first, never i
 
   An agent never sets Accepted, Rejected, Estimated, Backlog, Rework or Finished; it proposes in the channel. A
   size or plan that grows clearly while building is said before building on.
-- **`issues/README.md` is the index, grouped by state** in the board order of the workflow file; each
-  group a table of number, size, blocked by (in this repository) and what it covers, and in *Analyzed* also the number
-  of open questions (the group's heading says the state; a note on how far it is goes into what it covers), ordered by
-  what to do next; it changes in the same commit as the issue. An open task is never a TODO in code or a note in a commit message.
+- **`issues/README.md` is the index, grouped by state** in the board order of the workflow file, each group ordered by
+  priority and then rank, as the heads set them; a note on how far an issue is goes into its `covers`. An open task is
+  never a TODO in code or a note in a commit message.
 - **A rejected issue's file is deleted**; its number, title and one sentence why stay as a row under
   *Rejected* in the index, so the same idea is not brought twice.
 - **From Analyzed on, an issue has a size and a plan, read in the code, not guessed.** XS is under an hour (one
@@ -540,7 +544,7 @@ and the UTC time that text last changed; change it in the channel first, never i
   with `+`: estimates summed, the earliest start and the stack's readiness, VM time and tokens counted
   once.
 
-> **END Shared Area** · sha256 `a4f3e67584317e27`
+> **END Shared Area** · sha256 `af4767f35b55f60d`
 
 ## What this repository is
 
