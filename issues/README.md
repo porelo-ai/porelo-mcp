@@ -19,7 +19,6 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
-| <a id="mc14"></a>[MC14](MC14-The-Docs-Say-What-The-Code-Does.md) | S | - | Every sentence of the user-facing documentation - the READMEs, `doc/` and the unreleased changelog - is borne out by the code on `main`; a doc that is wrong is fixed, a code that is wrong is filed as a bug. About 170 claims read, four findings, one confirmed and fixed, none filed as a bug. |
 | <a id="mc01"></a>[MC01](MC01-The-MCP-SDK-Chosen-By-Measurement.md) | S | - | The MCP layer built on a Java MCP SDK or on a small layer of its own, chosen by measurement: a layer of its own, a third of the SDK's size and an eighth of its start. |
 | <a id="mc02"></a>[MC02](MC02-Tools-Generated-From-The-Daemon-s-Interface.md) | M | - | Every method the daemon describes in `Tasks1` an MCP tool, its schemas from the Varlink types, its answers and refusals the daemon's, tested against a stand-in daemon. |
 | <a id="mc05"></a>[MC05](MC05-Whether-It-Reaches-The-Daemon.md) | S | - | `porelo-mcp --check` says whether it reaches the daemon, with its version and the methods offered. |
@@ -36,3 +35,4 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 | <a id="mc12"></a>MC12 | M | - | The DEB and the RPM ship the full license and notice texts of everything compiled into the native executable, as one `THIRD-PARTY-NOTICES` file from the shared generator. |
 | <a id="mc03"></a>MC03 | M | - | `porelo-mcp serve` for one task: streamable HTTP on a `0600` Unix socket, the peer's uid checked, a bearer token from standard input, `ready` and the exit codes of the binding. |
 | <a id="mc13"></a>MC13 | S | - | The build checks that the runner image carries `rpm` and zlib's headers instead of fetching them from the Ubuntu mirrors on every run. |
+| <a id="mc14"></a>MC14 | S | - | The user-facing documentation - the READMEs, `doc/` and the unreleased changelog - read against the code, about 170 claims, its one confirmed finding fixed. |
