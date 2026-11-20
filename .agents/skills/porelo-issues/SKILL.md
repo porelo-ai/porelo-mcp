@@ -3,7 +3,7 @@ name: porelo-issues
 description: Porelo rules for issues: the skeleton, states, sizes, the index, links, finished and rejected rows, requirement hand-overs. Use when filing, analyzing or changing the state of an issue.
 ---
 
-> **BEGIN Shared Skill porelo-issues** · sha256 `df1ccdec0b03ad35` · changed 2026-11-20T07:25Z
+> **BEGIN Shared Skill porelo-issues** · sha256 `cc8442cd5b6d2e2c` · changed 2026-11-20T16:42Z
 
 # porelo-issues
 
@@ -71,10 +71,11 @@ description: Porelo rules for issues: the skeleton, states, sizes, the index, li
   never a TODO in code or a note in a commit message.
 - **A rejected issue's file is deleted**; its number, title and one sentence why stay as a row under
   *Rejected* in the index, so the same idea is not brought twice.
-- **From Analyzed on, an issue has a size and a plan, read in the code, not guessed.** XS is under an hour (one
-  file, no contract); S a few hours (one module and its tests, no contract other repositories read);
-  M about a day (several modules, or one contract change, docs, an acceptance step); L several days
-  (crosses repositories, or a design to decide first); XL is too big to build as one and says how it
+- **From Analyzed on, an issue has a size and a plan, read in the code, not guessed.** The times are
+  the wall time measured in `velocity.csv` across the repositories: XS takes minutes (one file, no contract); S under
+  an hour (one module and its tests, no contract other repositories read); M one to two hours (several modules, or
+  one contract change, docs, an acceptance step); L two hours or more (crosses repositories, or a design to decide
+  first); XL is too big to build as one and says how it
   splits into issues of L or smaller. *Plan* names the files and classes it touches, the steps and the
   test that goes red first; a size or a plan that turns out wrong while building is corrected in the
   issue in the same commit.
@@ -114,4 +115,4 @@ description: Porelo rules for issues: the skeleton, states, sizes, the index, li
   repository's prefixes; a repository may own several, for subgroups. An issue is one task and says
   what must be true and how it is judged done.
 
-> **END Shared Skill porelo-issues** · sha256 `df1ccdec0b03ad35`
+> **END Shared Skill porelo-issues** · sha256 `cc8442cd5b6d2e2c`
