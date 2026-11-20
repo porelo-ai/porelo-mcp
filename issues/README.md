@@ -15,6 +15,12 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 |---|---|---|---|
 | <a id="mc11"></a>[MC11](MC11-Tests-That-Follow-The-Pyramid.md) | M | - | The tests follow the pyramid: the never-set guard and the token's refusals unit-tested, stdio, serve and the session over a fake daemon in process, deadlines on an injected clock; today 29 % unit, 64 % integration. |
 
+## Backlog
+
+| # | Size | Blocked by | What it covers |
+|---|---|---|---|
+| <a id="mc15"></a>[MC15](MC15-A-Maven-Cache-That-Follows-The-Resolved-Versions.md) | S | - | The Build's Maven cache is saved again whenever the resolved dependencies change, so a Build after a moved parent, BOM or snapshot downloads nothing from Maven Central that an earlier Build already fetched. |
+
 ## Review
 
 | # | Size | Blocked by | What it covers |
