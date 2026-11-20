@@ -5,7 +5,7 @@
   "$schema": "issue-1.json",
   "id": "MC15",
   "title": "A Maven Cache That Follows The Resolved Versions",
-  "state": "Backlog",
+  "state": "Implementing",
   "size": "S",
   "priority": "High",
   "rank": 1,
