@@ -26,6 +26,7 @@ jobs:
                   fetch-depth: 0
 
             - name: The pinned GraalVM
+              id: pinned-jdk
               uses: ./.github/actions/pinned-jdk
 
             # The root's validate runs check-actions, check-shared, check-citations and check-readmes, with porelo-release
@@ -73,3 +74,9 @@ jobs:
                   # A repository younger than that is read whole, its first commit too.
                   start=$(git rev-list -1 --before='26 hours ago' HEAD)
                   ./mvnw -B -s settings.xml -N exec:exec@release -Drelease.args="check-commits ${start:+$start..}HEAD"
+
+            # Even after a failure, so what the job fetched is not asked of Central again.
+            - if: always()
+              uses: ./.github/actions/maven-cache-save
+              with:
+                  key: ${{ steps.pinned-jdk.outputs.maven-cache-key }}

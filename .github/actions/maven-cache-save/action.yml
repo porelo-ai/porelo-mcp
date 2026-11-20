@@ -1,0 +1,38 @@
+# Saves the local Maven repository under the run's key when the job fetched a jar or pom the restored cache lacked,
+# and only then: a run that fetched nothing saves no copy that would only crowd out the other caches.
+name: Maven cache, saved
+description: Saves ~/.m2/repository under the given key when the job added a jar or pom after the cache was restored.
+inputs:
+    key:
+        description: The key the pinned-jdk action restored under, its output maven-cache-key.
+        required: true
+runs:
+    using: composite
+    steps:
+        - id: fetched
+          if: always()
+          shell: bash
+          env:
+              KEY: ${{ inputs.key }}
+          run: |
+              marker="$RUNNER_TEMP/maven-cache-restored"
+              if [[ -z $KEY || ! -f $marker || ! -d ~/.m2/repository ]]; then
+                  echo "the cache was not restored in this job: nothing saved"
+                  echo "save=false" >>"$GITHUB_OUTPUT"
+                  exit 0
+              fi
+              # By status-change time: Maven dates a downloaded file by the server's Last-Modified.
+              first=$(find ~/.m2/repository -type f \( -name '*.jar' -o -name '*.pom' \) -cnewer "$marker" -print -quit)
+              if [[ -n $first ]]; then
+                  echo "fetched after the restore, among others: ${first#"$HOME"/}"
+                  echo "save=true" >>"$GITHUB_OUTPUT"
+              else
+                  echo "nothing fetched after the restore: nothing saved"
+                  echo "save=false" >>"$GITHUB_OUTPUT"
+              fi
+
+        - if: always() && steps.fetched.outputs.save == 'true'
+          uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          with:
+              path: ~/.m2/repository
+              key: ${{ inputs.key }}

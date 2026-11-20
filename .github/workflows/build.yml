@@ -38,6 +38,7 @@ jobs:
                   fetch-depth: 0
 
             - name: The pinned GraalVM
+              id: pinned-jdk
               uses: ./.github/actions/pinned-jdk
 
             # Publishing is switched by a variable, true where the packages are published and false where they are not;
@@ -219,3 +220,9 @@ jobs:
               run: |
                   ./mvnw -B -s settings.xml help:effective-pom -Doutput=target/effective-pom.xml
                   ./mvnw -B -s settings.xml -N exec:exec@check-releases
+
+            # Even after a failure, so what the job fetched is not asked of Central again.
+            - if: always()
+              uses: ./.github/actions/maven-cache-save
+              with:
+                  key: ${{ steps.pinned-jdk.outputs.maven-cache-key }}

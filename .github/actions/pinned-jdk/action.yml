@@ -13,15 +13,27 @@
 # rule in pinned.sh, copied unchanged from porelo-buildtools, which porelo-machines' PinnedRetry follows too.
 name: Pinned GraalVM
 description: Installs the GraalVM porelo-machines pins, checked against its digest, as JAVA_HOME for the rest of the job, and the pinned shfmt on the PATH.
+outputs:
+    maven-cache-key:
+        description: The key the job saves ~/.m2/repository under with the maven-cache-save action.
+        value: ${{ steps.maven-cache.outputs.cache-primary-key }}
 runs:
     using: composite
     steps:
-        # What setup-graalvm's 'cache: maven' did.
-        - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        # Keyed by the run and its attempt, so each one can save what it fetched: an existing key is never saved over,
+        # and the poms alone do not say what they resolve to.
+        - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          id: maven-cache
           with:
               path: ~/.m2/repository
-              key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
-              restore-keys: maven-${{ runner.os }}-
+              key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}-${{ github.run_id }}-${{ github.run_attempt }}
+              restore-keys: |
+                  maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}-
+                  maven-${{ runner.os }}-
+
+        # What changes status after this marker the job fetched itself, so maven-cache-save saves only a cache that grew.
+        - shell: bash
+          run: touch "$RUNNER_TEMP/maven-cache-restored"
 
         # The wrapper's Maven, fetched once per pin rather than by every job with one download and no retry.
         - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

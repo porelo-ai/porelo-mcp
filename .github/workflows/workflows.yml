@@ -22,6 +22,7 @@ jobs:
                   persist-credentials: false
 
             - name: The pinned GraalVM
+              id: pinned-jdk
               uses: ./.github/actions/pinned-jdk
 
             - name: Every step pinned to a commit
@@ -49,3 +50,9 @@ jobs:
                       print(f"ERROR {line}", file=sys.stderr)
                   sys.exit(1 if bad else 0)
                   PY
+
+            # Even after a failure, so what the job fetched is not asked of Central again.
+            - if: always()
+              uses: ./.github/actions/maven-cache-save
+              with:
+                  key: ${{ steps.pinned-jdk.outputs.maven-cache-key }}

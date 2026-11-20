@@ -15,16 +15,11 @@ who sets which state, are in [AGENTS.md](../AGENTS.md). Its prefix is `MC`. A gr
 |---|---|---|---|
 | <a id="mc11"></a>[MC11](MC11-Tests-That-Follow-The-Pyramid.md) | M | - | The tests follow the pyramid: the never-set guard and the token's refusals unit-tested, stdio, serve and the session over a fake daemon in process, deadlines on an injected clock; today 29 % unit, 64 % integration. |
 
-## Implementing
-
-| # | Size | Blocked by | What it covers |
-|---|---|---|---|
-| <a id="mc15"></a>[MC15](MC15-A-Maven-Cache-That-Follows-The-Resolved-Versions.md) | S | - | The Build's Maven cache is saved again whenever the resolved dependencies change, so a Build after a moved parent, BOM or snapshot downloads nothing from Maven Central that an earlier Build already fetched. |
-
 ## Review
 
 | # | Size | Blocked by | What it covers |
 |---|---|---|---|
+| <a id="mc15"></a>[MC15](MC15-A-Maven-Cache-That-Follows-The-Resolved-Versions.md) | XS | - | The Build's Maven cache is saved again whenever the resolved dependencies change, so a Build after a moved parent, BOM or snapshot downloads nothing from Maven Central that an earlier Build already fetched. |
 | <a id="mc01"></a>[MC01](MC01-The-MCP-SDK-Chosen-By-Measurement.md) | S | - | The MCP layer built on a Java MCP SDK or on a small layer of its own, chosen by measurement: a layer of its own, a third of the SDK's size and an eighth of its start. |
 | <a id="mc02"></a>[MC02](MC02-Tools-Generated-From-The-Daemon-s-Interface.md) | M | - | Every method the daemon describes in `Tasks1` an MCP tool, its schemas from the Varlink types, its answers and refusals the daemon's, tested against a stand-in daemon. |
 | <a id="mc05"></a>[MC05](MC05-Whether-It-Reaches-The-Daemon.md) | S | - | `porelo-mcp --check` says whether it reaches the daemon, with its version and the methods offered. |
