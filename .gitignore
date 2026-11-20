@@ -3,6 +3,10 @@
 # exceptions below are what a Java build needs. Identical in every repository of this product.
 .*
 !.gitignore
+!.agents
+!.claude
+.claude/*
+!.claude/skills
 !.editorconfig
 !.git-blame-ignore-revs
 !.gitkeep
