@@ -3,7 +3,7 @@ name: porelo-code
 description: Porelo rules for code and builds: downloads, input, comments, dot files, Maven, modules, READMEs, publishing, parent pom, NullAway, Javadoc, pins, snapshots, native images, licenses. Use when changing code, a pom, a workflow or a release.
 ---
 
-> **BEGIN Shared Skill porelo-code** · sha256 `4570b2f6f99bfe18` · changed 2026-11-20T07:25Z
+> **BEGIN Shared Skill porelo-code** · sha256 `82c46815da11e4ef` · changed 2026-11-21T17:19Z
 
 # porelo-code
 
@@ -115,10 +115,15 @@ description: Porelo rules for code and builds: downloads, input, comments, dot f
 - **Fail closed and loud**: when a dependency is unreachable, a key is unknown or a check cannot run,
   stop with a non-zero exit code and say why; inside a program, an exception that says why does the
   same. Never silently do less.
+- **An outside service's own answer is never swallowed**: when a call to GitHub, a registry, a provider or any
+  other service fails, the log line and the error a person sees carry what the service said - its status, its
+  error code and message, and a retry-after it gave - beside the program's own words, with secrets left out. A
+  wrapping exception keeps the original as its cause, and every layer that logs or answers passes it on; "request
+  failed" without the service's words is a bug.
 
 ## Shell scripts
 
 - **A change to a shell script runs `./mvnw spotless:check` before Push ready** in every repository whose build
   checks shell scripts with shfmt through spotless, as `porelo-parent` does; CI fails on it.
 
-> **END Shared Skill porelo-code** · sha256 `4570b2f6f99bfe18`
+> **END Shared Skill porelo-code** · sha256 `82c46815da11e4ef`
