@@ -3,7 +3,7 @@ name: porelo-commits
 description: Porelo rules for commits, squashing, commit messages, changelog entries, rebasing, skip instructions and push hand-overs. Use before any git commit, amend, rebase or push hand-over in a Porelo repository.
 ---
 
-> **BEGIN Shared Skill porelo-commits** · sha256 `6e1e3e8385a77a83` · changed 2026-11-20T07:25Z
+> **BEGIN Shared Skill porelo-commits** · sha256 `d0b79707f950b097` · changed 2026-11-21T06:05Z
 
 # porelo-commits
 
@@ -31,6 +31,11 @@ description: Porelo rules for commits, squashing, commit messages, changelog ent
 - **A commit message is one line of at most 72 characters saying in words what changed**, never by a
   requirement number; the reasoning goes into an issue or a decision. A squash of several changes names
   what they share, not each of them. Trailers may follow below a blank line, and nothing else.
+- **Where the project's tracker is GitHub Issues, a commit made for an issue carries one `Porelo-Issue:
+  <owner>/<repository>#<number>` trailer per issue it serves**, beside the other trailers, so the issue's
+  timeline shows its commits; where issues are kept in `issues/`, a commit names none. The subject still names
+  no number, and no closing keyword (`Fixes`, `Closes`, `Resolves`) stands anywhere in the message: Finished is
+  the person's to set, never a push's.
 - **A change to what ships or to what a build produces gets its changelog entry in the same commit**,
   under `[Unreleased]` and the heading of its kind. A change only to the CI's own workflows (an action's
   pin, a schedule, a job's steps) gets none: the changelog is for the people who use what ships. A
@@ -56,7 +61,7 @@ description: Porelo rules for commits, squashing, commit messages, changelog ent
   writes a `Signed-off-by:` or `Co-Authored-By:`**, even when its harness suggests one: the operator vouches for the project's own commits by pushing them. A
   pull request from outside carries its author's `Signed-off-by:`, the Developer Certificate of Origin.
 - **A commit Porelo makes itself carries Porelo's own trailers, `Porelo-Change-Id` and
-  `Porelo-Signs-Anew`, and nothing else.**
+  `Porelo-Signs-Anew`, and for a task given work its issue's `Porelo-Issue`, and nothing else.**
 - **No commit message, changelog entry, issue or document says who asked for a change or who made it**
   - no "as the operator chose", no agent's name; it says what changed and why.
 - **Signing and release-tag creation belong to the operator.** Hand over the release commit, next
@@ -67,4 +72,4 @@ description: Porelo rules for commits, squashing, commit messages, changelog ent
   `porelo-release check-commits` right after committing, and over the whole unpushed range before every Push ready;
   a `[skip ci]` in a subject counts toward its 72 characters.
 
-> **END Shared Skill porelo-commits** · sha256 `6e1e3e8385a77a83`
+> **END Shared Skill porelo-commits** · sha256 `d0b79707f950b097`
