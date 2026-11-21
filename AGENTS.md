@@ -92,7 +92,8 @@ an RPM package of its own.
 
 ## Work in this repository
 
-- **Issue prefix: `MC`.**
+- **Issues are in the repository's GitHub Issues**, each named by its reference there
+  (`porelo-ai/porelo-mcp#<number>`); one carried over from the Markdown files keeps its old `MC` id as a fixed alias.
 - **The tests run against a stand-in daemon** that serves a Varlink interface over a Unix socket, so nothing here needs
   a running Porelo. Wherever a test is about the contract, the stand-in serves the real `Tasks1` interface: as porelo
   publishes it, or until it does, taken from porelo's main at a commit named beside it.

@@ -9,4 +9,4 @@ what a commit carries. It is one page for every Porelo repository:
 - **Building and testing:** JDK 25, the pinned GraalVM. `./mvnw -B -s settings.xml verify` runs the tests.
 - **The contract** it serves is porelo's `org.fuin.porelo.Tasks1` interface, read from the running daemon; how the
   daemon starts it for a task is [doc/binding.md](doc/binding.md), changed only together with porelo.
-- **Requirements** are in [issues/README.md](issues/README.md).
+- **Requirements** are in the repository's [GitHub Issues](https://github.com/porelo-ai/porelo-mcp/issues).

@@ -244,7 +244,7 @@
 
     <profiles>
         <profile>
-            <!-- A change to documents or issues: only the tests that read them, tagged so. -->
+            <!-- A change to documents: only the tests that read them, tagged so. -->
             <id>documents</id>
             <properties>
                 <groups>documents</groups>

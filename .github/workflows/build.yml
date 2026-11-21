@@ -10,10 +10,10 @@ on:
         # A change to documents alone is checked locally before the hand-over and by the Shared rules check once a day.
         # Workflows alone build nothing either: an action's move is checked by its pull request, and the next push with
         # content builds with it.
-        paths-ignore: ['**.md', 'doc/**', 'issues/**', '.github/**']
+        paths-ignore: ['**.md', 'doc/**', '.github/**']
     pull_request:
         # A workflow-only change is the Workflow check's, a change to documents alone the Shared rules check's.
-        paths-ignore: ['**.md', 'doc/**', 'issues/**', '.github/**']
+        paths-ignore: ['**.md', 'doc/**', '.github/**']
     workflow_dispatch:
 
 permissions:
