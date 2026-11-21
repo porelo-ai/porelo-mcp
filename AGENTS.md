@@ -2,7 +2,7 @@
 
 ## Shared across the Porelo repositories
 
-> **BEGIN Shared Area** · sha256 `d930a9596cedf6cc` · changed 2026-11-20T07:25Z
+> **BEGIN Shared Area** · sha256 `e9f242a328fb9719` · changed 2026-11-21T16:39Z
 
 Identical in every repository `project.yml` names but `porelo-parent`; the markers carry the SHA-256 of the lines
 between them and the time they last changed. Change it in the channel first, never in one copy. The same holds for
@@ -46,8 +46,8 @@ every shared skill `porelo-*` in `.agents/skills/`, whose markers also cover its
 - **When a thing is right in two forms, keep one.**
 - **What is written states what is true now, in US English**: no dates, no history, nobody named, only roles; it
   says what changed and why, never who asked. A finding worth keeping is committed, never left in a conversation.
-- **Every open task is an issue in `issues/`**, never a TODO in code; code and anything that ships never cite an
-  issue number.
+- **Every open task is an issue in its repository's GitHub Issues, on the project's board**, never a TODO in code;
+  code and anything that ships never cite an issue number.
 
 ### Which skill to load
 
@@ -68,7 +68,7 @@ into a shared skill or this block, one that concerns only this machine into `.AG
 | write documentation or a decision; hand over | `porelo-writing` |
 | start analysis or implementation; hand over a push | `porelo-estimates` |
 
-> **END Shared Area** · sha256 `d930a9596cedf6cc`
+> **END Shared Area** · sha256 `e9f242a328fb9719`
 
 ## What this repository is
 

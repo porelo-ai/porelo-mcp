@@ -3,7 +3,7 @@ name: porelo-testing
 description: Porelo test rules: the pyramid, red first, what a test guards, independence, flaky tests, reruns after a failure, document checks before a hand-over. Use when writing, running or judging tests.
 ---
 
-> **BEGIN Shared Skill porelo-testing** · sha256 `fd8ebf396e227838` · changed 2026-11-20T07:25Z
+> **BEGIN Shared Skill porelo-testing** · sha256 `95cffea0cd584f87` · changed 2026-11-21T16:39Z
 
 # porelo-testing
 
@@ -77,8 +77,8 @@ description: Porelo test rules: the pyramid, red first, what a test guards, inde
   push and pull request**, on a GitHub runner; the build skips a change to documents only.
 - **A test result names every skipped test**, never just a count.
 - **An obviously flaky test that blocks a delivery is disabled for the time being, and an issue for it
-  is filed in Backlog as the first row of its index (Highest).** The agent sets that state itself, the one
-  exception to the operator's states, and fixes the test right after. When two or three tries at the fix
+  is filed in Backlog with priority Highest.** That state is set for it without the operator, the one
+  exception to the operator's states, and the agent fixes the test right after. When two or three tries at the fix
   have failed, it says so in the channel and stops; the coordinator tells the operator. A real fault is
   fixed, never disabled.
 - **A failing check prints what it asked and what it got, never a guessed cause**, and its failure
@@ -103,4 +103,4 @@ description: Porelo test rules: the pyramid, red first, what a test guards, inde
   skipped test by name and each rerun after a failure**; new tests follow the pyramid and name the harm they guard.
   Old tests are not rewritten for the pyramid alone.
 
-> **END Shared Skill porelo-testing** · sha256 `fd8ebf396e227838`
+> **END Shared Skill porelo-testing** · sha256 `95cffea0cd584f87`

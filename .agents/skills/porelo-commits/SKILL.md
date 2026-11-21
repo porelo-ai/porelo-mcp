@@ -3,7 +3,7 @@ name: porelo-commits
 description: Porelo rules for commits, squashing, commit messages, changelog entries, rebasing, skip instructions and push hand-overs. Use before any git commit, amend, rebase or push hand-over in a Porelo repository.
 ---
 
-> **BEGIN Shared Skill porelo-commits** · sha256 `d0b79707f950b097` · changed 2026-11-21T06:05Z
+> **BEGIN Shared Skill porelo-commits** · sha256 `275d953c1591a6e3` · changed 2026-11-21T16:39Z
 
 # porelo-commits
 
@@ -31,9 +31,8 @@ description: Porelo rules for commits, squashing, commit messages, changelog ent
 - **A commit message is one line of at most 72 characters saying in words what changed**, never by a
   requirement number; the reasoning goes into an issue or a decision. A squash of several changes names
   what they share, not each of them. Trailers may follow below a blank line, and nothing else.
-- **Where the project's tracker is GitHub Issues, a commit made for an issue carries one `Porelo-Issue:
-  <owner>/<repository>#<number>` trailer per issue it serves**, beside the other trailers, so the issue's
-  timeline shows its commits; where issues are kept in `issues/`, a commit names none. The subject still names
+- **A commit made for an issue carries one `Porelo-Issue: <owner>/<repository>#<number>` trailer per issue it
+  serves**, beside the other trailers, so the issue's timeline shows its commits. The subject still names
   no number, and no closing keyword (`Fixes`, `Closes`, `Resolves`) stands anywhere in the message: Finished is
   the person's to set, never a push's.
 - **A change to what ships or to what a build produces gets its changelog entry in the same commit**,
@@ -72,4 +71,4 @@ description: Porelo rules for commits, squashing, commit messages, changelog ent
   `porelo-release check-commits` right after committing, and over the whole unpushed range before every Push ready;
   a `[skip ci]` in a subject counts toward its 72 characters.
 
-> **END Shared Skill porelo-commits** · sha256 `d0b79707f950b097`
+> **END Shared Skill porelo-commits** · sha256 `275d953c1591a6e3`
