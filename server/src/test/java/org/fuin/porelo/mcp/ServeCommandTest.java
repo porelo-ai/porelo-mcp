@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -146,6 +147,35 @@ class ServeCommandTest {
         }
     }
 
+    // Harm: a slow network met only by a new build, because the services factor porelod hands on
+    // never reaches the connection's deadline.
+    @Test
+    @org.junit.jupiter.api.Timeout(30)
+    void aStalledPeerIsClosedAfterTheDeadlineTimesTheServicesFactor() throws Exception {
+        try (var daemon = new StandInDaemon(directory, StandInDaemon.tasks1(), Map.of())) {
+            Path socket = mcpDirectory().resolve("t.sock");
+            Started started =
+                    start(socket, daemon.socket(), TOKEN + "\n", "--limits", "services=0.1");
+            started.awaitReady();
+
+            long begun = System.nanoTime();
+            try (var stalled =
+                    java.nio.channels.SocketChannel.open(java.net.StandardProtocolFamily.UNIX)) {
+                stalled.connect(java.net.UnixDomainSocketAddress.of(socket));
+                stalled.write(
+                        java.nio.ByteBuffer.wrap(
+                                "POST /mcp HTTP/1.1\r\nX-Half"
+                                        .getBytes(StandardCharsets.US_ASCII)));
+                java.nio.channels.Channels.newInputStream(stalled).readAllBytes();
+            }
+            Duration took = Duration.ofNanos(System.nanoTime() - begun);
+
+            assertThat(took)
+                    .as("closed after 30 s times 0.1, not after 30 s")
+                    .isBetween(Duration.ofMillis(2_500), Duration.ofSeconds(15));
+        }
+    }
+
     private static String request(Path socket, String request) throws IOException {
         try (var client =
                 java.nio.channels.SocketChannel.open(java.net.StandardProtocolFamily.UNIX)) {
@@ -209,21 +239,25 @@ class ServeCommandTest {
         }
     }
 
-    private Started start(Path socket, Path daemonSocket, String token) throws IOException {
+    private Started start(Path socket, Path daemonSocket, String token, String... more)
+            throws IOException {
         String java = ProcessHandle.current().info().command().orElseThrow();
-        ProcessBuilder builder =
-                new ProcessBuilder(
-                        java,
-                        "-cp",
-                        System.getProperty("java.class.path"),
-                        Main.class.getName(),
-                        "serve",
-                        "--task",
-                        "t-1",
-                        "--socket",
-                        socket.toString(),
-                        "--daemon-socket",
-                        daemonSocket.toString());
+        List<String> command =
+                new ArrayList<>(
+                        List.of(
+                                java,
+                                "-cp",
+                                System.getProperty("java.class.path"),
+                                Main.class.getName(),
+                                "serve",
+                                "--task",
+                                "t-1",
+                                "--socket",
+                                socket.toString(),
+                                "--daemon-socket",
+                                daemonSocket.toString()));
+        command.addAll(List.of(more));
+        ProcessBuilder builder = new ProcessBuilder(command);
         builder.environment()
                 .keySet()
                 .removeIf(name -> !name.equals("PATH") && !name.equals("HOME"));

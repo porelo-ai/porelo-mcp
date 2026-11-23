@@ -8,11 +8,16 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 - `porelod` starts one `porelo-mcp` process per task it allows one, as the person's own user, again on resume, and
   stops it with the task:
 
-      porelo-mcp serve --task <container> --socket <dir>/<container>.sock --daemon-socket <dir>/<container>.daemon.sock
+      porelo-mcp serve --task <container> --socket <dir>/<container>.sock \
+          --daemon-socket <dir>/<container>.daemon.sock --limits <line>
 
 - `<dir>` is `$XDG_RUNTIME_DIR/porelo/mcp`, made by `porelod` with mode `0700`. `porelod` removes a stale socket of the
   task before a start or a resume.
 - `--task` only names the process in its log and in `task status`. It is never sent to the daemon and carries no right.
+- `--limits` is the limits line of porelo's `doc/limits.md`, read by `LimitFactors` of `porelo-wire`. Each
+  connection's deadline is 30 seconds times `services`; no other time limit here follows a factor. Without the option
+  all four are 1.0. A refused line exits 64 with `porelo-mcp: --limits: <what is wrong>` on standard error before
+  anything else is done; the option without a value, or given twice, is a wrong argument and exits 2.
 - The start goes in this order, and nothing of a later step happens when an earlier one failed:
   1. the arguments are read;
   2. the token is read from standard input;
@@ -110,11 +115,12 @@ client may use either.
   | 1 | failed while running, after `ready` | failed, with the code |
   | 2 | refused at start: wrong arguments, a refused token, or a socket path or directory refused | failed, with the code |
   | 3 | the daemon socket was not reachable, or its interface not readable, before `ready` | could not reach its daemon socket, with the code |
+  | 64 | refused at start: the limits line | failed, with the code |
 
 ## Outside a task: stdio
 
-- `porelo-mcp stdio [--daemon-socket <path>]` serves a person's own MCP client on the host over standard input and
-  output, on the person's own daemon socket, by default `$XDG_RUNTIME_DIR/porelo/porelod.sock`.
+- `porelo-mcp stdio [--daemon-socket <path>] [--limits <line>]` serves a person's own MCP client on the host over
+  standard input and output, on the person's own daemon socket, by default `$XDG_RUNTIME_DIR/porelo/porelod.sock`.
 - It offers by default only the reading methods, named one by one, never guessed from a method's name. A writing method
   is offered only when the person names it in a list of their own local Porelo settings, never in a project file.
 - A destructive method - such as stopping every task, clearing the vault, or panic - is never offered over stdio,
@@ -152,9 +158,11 @@ client may use either.
 
 ## Checking it
 
-- `porelo-mcp --check [--daemon-socket <path>]` says whether it reaches the daemon, with the version from
-  `org.varlink.service.GetInfo` and the methods it is offered.
+- `porelo-mcp --check [--daemon-socket <path>] [--limits <line>]` says whether it reaches the daemon, with the version
+  from `org.varlink.service.GetInfo` and the methods it is offered.
 - The daemon socket is by default `$XDG_RUNTIME_DIR/porelo/porelod.sock`.
 - It exits 0 when it reached the daemon: `GetInfo` named a version and `GetInterfaceDescription` described
   `org.fuin.porelo.Tasks1`. It exits 3, naming what it tried, when it did not, or when `XDG_RUNTIME_DIR` is unset or
-  empty and no socket was given. It exits 2 for a wrong argument.
+  empty and no socket was given. It exits 2 for a wrong argument, and 64 for a refused limits line.
+- `stdio` and `--check` take `--limits` as `serve` does, so a client that passes the line on to what it starts is never
+  refused for it; neither has a time limit of its own.

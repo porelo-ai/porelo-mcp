@@ -185,6 +185,96 @@ class CheckCommandTest {
                 .doesNotContain("token");
     }
 
+    // Harm: a broken limits line from porelod taken as all factors at 1.0, or read as some other
+    // fault, so the daemon cannot say what is wrong.
+    @Test
+    void aRefusedLimitsLineExitsSixtyFourInEveryModeBeforeAnythingIsDone() {
+        Path socket = directory.resolve("s");
+        List<Ran> refused =
+                List.of(
+                        run(
+                                Map.of(),
+                                "serve",
+                                "--task",
+                                "t",
+                                "--socket",
+                                socket.toString(),
+                                "--daemon-socket",
+                                "d",
+                                "--limits",
+                                "services=0"),
+                        run(Map.of(), "stdio", "--limits", "speed=2.0"),
+                        run(Map.of(), "--check", "--limits", "services=1.0,services=2.0"));
+
+        assertThat(refused)
+                .as("each refused with 64, naming --limits, before the token or the daemon")
+                .allSatisfy(
+                        ran -> {
+                            assertThat(ran.code).as("exit code: %s", ran.err).isEqualTo(64);
+                            assertThat(ran.err).as("names the option").contains("--limits: ");
+                            assertThat(ran.out).as("no ready, no answer").isEmpty();
+                        });
+        assertThat(Files.exists(socket)).as("no socket bound").isFalse();
+    }
+
+    // Harm: a program refusing the limits line every program porelod starts is given, or the
+    // window and IntelliJ pass on.
+    @Test
+    void aGoodLimitsLineIsTakenByStdioAndCheck() {
+        Path none = Path.of("/nonexistent/porelod.sock");
+        Ran check =
+                run(
+                        Map.of(),
+                        "--check",
+                        "--limits",
+                        "services=2.0",
+                        "--daemon-socket",
+                        none.toString());
+        Ran stdio = run(Map.of(), "stdio", "--daemon-socket", none.toString(), "--limits", "");
+
+        assertThat(check.code)
+                .as("taken; the daemon is what is missing: %s", check.err)
+                .isEqualTo(3);
+        assertThat(stdio.code).as("an empty line is all four at 1.0: %s", stdio.err).isEqualTo(3);
+    }
+
+    // Harm: an argument read as the limits line, or the line read as another option's value, so a
+    // task starts with factors porelod never gave.
+    @Test
+    void theLimitsLineIsTakenOnlyAsAnOptionOfItsOwnWhereverItStands() throws Exception {
+        Main.Arguments first =
+                Main.Arguments.of(List.of("--limits", "services=2.0", "--task", "t"));
+        Main.Arguments last = Main.Arguments.of(List.of("--task", "t", "--limits", "services=2.0"));
+        Main.Arguments asValue =
+                Main.Arguments.of(List.of("--task", "--limits", "services=2.0", "x"));
+        Main.Arguments empty = Main.Arguments.of(List.of("--limits", ""));
+
+        assertThat(List.of(first, last))
+                .as("taken first or last, the rest kept in order")
+                .allSatisfy(
+                        each -> {
+                            assertThat(each.limits().services(java.time.Duration.ofSeconds(30)))
+                                    .as("services 2.0")
+                                    .isEqualTo(java.time.Duration.ofSeconds(60));
+                            assertThat(each.rest()).as("the rest").containsExactly("--task", "t");
+                        });
+        assertThat(asValue.limits())
+                .as("--limits as another option's value is no line")
+                .isEqualTo(org.fuin.porelo.wire.LimitFactors.DEFAULT);
+        assertThat(asValue.rest())
+                .as("left for the options check to refuse")
+                .containsExactly("--task", "--limits", "services=2.0", "x");
+        assertThat(empty.limits())
+                .as("an empty line is all four at 1.0")
+                .isEqualTo(org.fuin.porelo.wire.LimitFactors.DEFAULT);
+        assertThat(run(Map.of(), "--check", "--limits").code)
+                .as("no value: a wrong argument")
+                .isEqualTo(2);
+        assertThat(run(Map.of(), "--check", "--limits", "", "--limits", "services=2.0").code)
+                .as("given twice: a wrong argument")
+                .isEqualTo(2);
+    }
+
     record Ran(int code, String out, String err) {}
 
     static Ran run(Map<String, String> environment, String... args) {

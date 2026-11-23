@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import org.fuin.porelo.wire.LimitFactors;
 import org.fuin.porelo.wire.varlink.VarlinkException;
 import org.jspecify.annotations.Nullable;
 
@@ -31,10 +32,13 @@ public final class Main {
     /** The daemon socket was not reachable, or its interface not readable, before {@code ready}. */
     static final int NO_DAEMON = 3;
 
+    /** Refused at start for its limits line, as every program the daemon starts refuses one. */
+    static final int LIMITS_REFUSED = 64;
+
     /** The interface whose methods are the tools. */
     static final String INTERFACE = "org.fuin.porelo.Tasks1";
 
-    /** How long one connection may take, head and body. */
+    /** How long one connection may take, head and body, before the services factor. */
     static final Duration DEADLINE = Duration.ofSeconds(30);
 
     private Main() {}
@@ -64,25 +68,75 @@ public final class Main {
             PrintStream out,
             PrintStream err,
             Map<String, String> environment) {
-        if (args.length > 0 && args[0].equals("--check")) {
-            return check(List.of(args).subList(1, args.length), out, err, environment);
-        }
-        if (args.length > 0 && args[0].equals("stdio")) {
-            return stdio(List.of(args).subList(1, args.length), in, out, err, environment);
-        }
-        if (args.length == 0 || !args[0].equals("serve")) {
+        final String mode = args.length == 0 ? "" : args[0];
+        if (!Set.of("serve", "stdio", "--check").contains(mode)) {
             err.println(
-                    "porelo-mcp: usage: porelo-mcp serve --task <name> --socket <path> --daemon-socket <path>");
-            err.println("       porelo-mcp stdio [--daemon-socket <path>]");
-            err.println("       porelo-mcp --check [--daemon-socket <path>]");
+                    "porelo-mcp: usage: porelo-mcp serve --task <name> --socket <path> --daemon-socket <path>"
+                            + " [--limits <line>]");
+            err.println("       porelo-mcp stdio [--daemon-socket <path>] [--limits <line>]");
+            err.println("       porelo-mcp --check [--daemon-socket <path>] [--limits <line>]");
             return REFUSED;
         }
+        final Arguments arguments;
+        try {
+            arguments = Arguments.of(List.of(args).subList(1, args.length));
+        } catch (StartRefused ex) {
+            err.println("porelo-mcp: " + ex.getMessage());
+            return REFUSED;
+        } catch (IllegalArgumentException ex) {
+            err.println("porelo-mcp: " + LimitFactors.OPTION + ": " + ex.getMessage());
+            return LIMITS_REFUSED;
+        }
+        return switch (mode) {
+            case "--check" -> check(arguments.rest(), out, err, environment);
+            case "stdio" -> stdio(arguments.rest(), in, out, err, environment);
+            default -> serve(arguments, in, out, err);
+        };
+    }
+
+    /**
+     * The arguments after the mode: the limits line, taken out wherever it stands, and the rest.
+     *
+     * @param limits The factors the line names, all four at 1.0 when none is given.
+     * @param rest The other arguments, in their order.
+     */
+    record Arguments(LimitFactors limits, List<String> rest) {
+
+        /**
+         * Takes the limits line out of the arguments, which come in {@code --name value} pairs.
+         *
+         * @param given The arguments after the mode.
+         * @return The factors and the other arguments.
+         * @throws StartRefused When the option has no value or is given twice.
+         * @throws IllegalArgumentException When the line is refused, naming what is wrong.
+         */
+        static Arguments of(List<String> given) throws StartRefused {
+            @Nullable LimitFactors limits = null;
+            final List<String> rest = new java.util.ArrayList<>();
+            for (int i = 0; i < given.size(); i += 2) {
+                if (!given.get(i).equals(LimitFactors.OPTION)) {
+                    rest.addAll(given.subList(i, Math.min(i + 2, given.size())));
+                    continue;
+                }
+                if (i + 1 == given.size()) {
+                    throw new StartRefused(LimitFactors.OPTION + " needs a value");
+                }
+                if (limits != null) {
+                    throw new StartRefused(LimitFactors.OPTION + " is given twice");
+                }
+                // An empty line is allowed: all four at 1.0.
+                limits = LimitFactors.parse(given.get(i + 1));
+            }
+            return new Arguments(limits == null ? LimitFactors.DEFAULT : limits, rest);
+        }
+    }
+
+    /** Serves one task's MCP socket, as the daemon starts it. */
+    private static int serve(
+            Arguments arguments, InputStream in, PrintStream out, PrintStream err) {
         final Map<String, String> options;
         try {
-            options =
-                    options(
-                            List.of(args).subList(1, args.length),
-                            Set.of("--task", "--socket", "--daemon-socket"));
+            options = options(arguments.rest(), Set.of("--task", "--socket", "--daemon-socket"));
         } catch (StartRefused ex) {
             err.println("porelo-mcp: " + ex.getMessage());
             return REFUSED;
@@ -145,7 +199,7 @@ public final class Main {
                             token,
                             new McpSession(tools, daemon, version()),
                             McpHttpServer.sameUserAs(SocketPlace.check(socket)),
-                            DEADLINE);
+                            arguments.limits().services(DEADLINE));
         } catch (StartRefused ex) {
             err.println("porelo-mcp: " + task + ": " + ex.getMessage());
             return REFUSED;

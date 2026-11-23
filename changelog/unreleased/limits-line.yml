@@ -1,0 +1,2 @@
+title: Take the limits line as --limits in every mode, so a task socket's connection deadline is 30 seconds times the services factor; a refused line exits 64 before anything else is done.
+type: added
