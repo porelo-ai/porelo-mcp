@@ -124,7 +124,6 @@ public final class Main {
                 if (limits != null) {
                     throw new StartRefused(LimitFactors.OPTION + " is given twice");
                 }
-                // An empty line is allowed: all four at 1.0.
                 limits = LimitFactors.parse(given.get(i + 1));
             }
             return new Arguments(limits == null ? LimitFactors.DEFAULT : limits, rest);

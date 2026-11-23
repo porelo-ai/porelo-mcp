@@ -204,7 +204,9 @@ class CheckCommandTest {
                                 "--limits",
                                 "services=0"),
                         run(Map.of(), "stdio", "--limits", "speed=2.0"),
-                        run(Map.of(), "--check", "--limits", "services=1.0,services=2.0"));
+                        run(Map.of(), "--check", "--limits", "services=1.0,services=2.0"),
+                        // Given, so never taken as the defaults a missing option means.
+                        run(Map.of(), "--check", "--limits", ""));
 
         assertThat(refused)
                 .as("each refused with 64, naming --limits, before the token or the daemon")
@@ -230,12 +232,19 @@ class CheckCommandTest {
                         "services=2.0",
                         "--daemon-socket",
                         none.toString());
-        Ran stdio = run(Map.of(), "stdio", "--daemon-socket", none.toString(), "--limits", "");
+        Ran stdio =
+                run(
+                        Map.of(),
+                        "stdio",
+                        "--daemon-socket",
+                        none.toString(),
+                        "--limits",
+                        "polling=0.5");
 
         assertThat(check.code)
                 .as("taken; the daemon is what is missing: %s", check.err)
                 .isEqualTo(3);
-        assertThat(stdio.code).as("an empty line is all four at 1.0: %s", stdio.err).isEqualTo(3);
+        assertThat(stdio.code).as("taken last: %s", stdio.err).isEqualTo(3);
     }
 
     // Harm: an argument read as the limits line, or the line read as another option's value, so a
@@ -247,7 +256,6 @@ class CheckCommandTest {
         Main.Arguments last = Main.Arguments.of(List.of("--task", "t", "--limits", "services=2.0"));
         Main.Arguments asValue =
                 Main.Arguments.of(List.of("--task", "--limits", "services=2.0", "x"));
-        Main.Arguments empty = Main.Arguments.of(List.of("--limits", ""));
 
         assertThat(List.of(first, last))
                 .as("taken first or last, the rest kept in order")
@@ -264,13 +272,18 @@ class CheckCommandTest {
         assertThat(asValue.rest())
                 .as("left for the options check to refuse")
                 .containsExactly("--task", "--limits", "services=2.0", "x");
-        assertThat(empty.limits())
-                .as("an empty line is all four at 1.0")
-                .isEqualTo(org.fuin.porelo.wire.LimitFactors.DEFAULT);
         assertThat(run(Map.of(), "--check", "--limits").code)
                 .as("no value: a wrong argument")
                 .isEqualTo(2);
-        assertThat(run(Map.of(), "--check", "--limits", "", "--limits", "services=2.0").code)
+        assertThat(
+                        run(
+                                        Map.of(),
+                                        "--check",
+                                        "--limits",
+                                        "services=1.0",
+                                        "--limits",
+                                        "services=2.0")
+                                .code)
                 .as("given twice: a wrong argument")
                 .isEqualTo(2);
     }
