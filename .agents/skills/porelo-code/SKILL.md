@@ -3,7 +3,7 @@ name: porelo-code
 description: Porelo rules for code and builds: downloads, input, comments, dot files, Maven, modules, READMEs, publishing, parent pom, NullAway, Javadoc, pins, snapshots, native images, licenses. Use when changing code, a pom, a workflow or a release.
 ---
 
-> **BEGIN Shared Skill porelo-code** · sha256 `6ea55f4a7ad5e2b1` · changed 2026-11-23T05:48Z
+> **BEGIN Shared Skill porelo-code** · sha256 `d9cc2d4a12f33990` · changed 2026-11-23T06:05Z
 
 # porelo-code
 
@@ -24,10 +24,16 @@ description: Porelo rules for code and builds: downloads, input, comments, dot f
 - **A comment says why, never what, in one line where it can.** Reasoning that does not fit goes into
   documentation or a decision, and a small named method is preferred over a comment explaining a
   block.
-- **A timeout, deadline, wait, retry count, interval or similar limit is a setting with a default, never a
-  constant alone**: the program reads it from its configuration, so a slow forge, a slow network or a large
-  project is met by changing a setting, not by a new build. Replacing such a constant by a setting is at
-  most size S.
+- **Every time limit follows one of four factors of the configuration, each 1.0 by default**:
+  `limits.services` (an answer from outside: a forge, an API, a download, a homeserver, another Porelo
+  program), `limits.machines` (a program, container or machine starting, stopping or running a command),
+  `limits.polling` (how often something is looked at again) and `limits.retries` (how often, and after what
+  pause, a failed step is tried again). The constant stays as the default and is multiplied by its group's
+  factor, so a slow network or machine is met by one setting, not by a new build. A limit is a named
+  setting of its own only where it is a real decision of the person, such as a card's or token's life, how
+  long rows are kept or an agent's run limit. Sizes and counts, internal pacing, protocol values and the
+  build and rental tools' limits stay fixed; a size limit a real project can reach is removed, not made
+  settable. Putting a constant under its factor is at most size S.
 - **Dot files are not committed.** `.gitignore` ignores `.*` and excepts only what a build, the
   shared code style or the agents' rules need - `.github`, `.gitignore`, `.gitkeep`, `.editorconfig`,
   `.git-blame-ignore-revs`, `.agents`, and `.claude/skills` alone of `.claude` (`!.claude`, `.claude/*`,
@@ -131,4 +137,4 @@ description: Porelo rules for code and builds: downloads, input, comments, dot f
 - **A change to a shell script runs `./mvnw spotless:check` before Push ready** in every repository whose build
   checks shell scripts with shfmt through spotless, as `porelo-parent` does; CI fails on it.
 
-> **END Shared Skill porelo-code** · sha256 `6ea55f4a7ad5e2b1`
+> **END Shared Skill porelo-code** · sha256 `d9cc2d4a12f33990`
