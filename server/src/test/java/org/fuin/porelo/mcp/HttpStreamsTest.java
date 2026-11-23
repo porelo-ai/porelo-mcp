@@ -174,10 +174,13 @@ class HttpStreamsTest {
     @Test
     void aStreamCancelledBeforeItsFirstReplyHasAnsweredTwoHundredAlready() throws Exception {
         CountDownLatch gone = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicBoolean reached =
+                new java.util.concurrent.atomic.AtomicBoolean();
         start(
                 Map.of(
                         "Watch",
                         (parameters, replies) -> {
+                            reached.set(true);
                             while (replies.open()) {
                                 try {
                                     Thread.sleep(20);
@@ -203,8 +206,11 @@ class HttpStreamsTest {
             }
 
             assertThat(head).as("answered at once").startsWith("HTTP/1.1 200 ");
-            assertThat(gone.await(10, TimeUnit.SECONDS)).as("the daemon's call ended").isTrue();
             assertThat(in.readAllBytes()).as("and nothing after it").isEmpty();
+            // The client's half-close may cancel the call before it reaches the daemon at all.
+            assertThat(!reached.get() || gone.await(10, TimeUnit.SECONDS))
+                    .as("a call that reached the daemon ended there")
+                    .isTrue();
         }
     }
 
