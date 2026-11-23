@@ -45,8 +45,10 @@ images with the pinned GraalVM and `-march=x86-64`:
     apart, so one stalled peer holds up no other; at most 64 at once, the next waiting in the kernel's backlog;
   - after its answer a connection is let go at once: what has already arrived beyond the request, at most 64 KiB, is
     read away without waiting, so closing does not reset the answer;
-  - the head at most 16 KiB and 64 header lines, counted while it is read, else `431`; the body at most 1 MiB, checked
-    against `Content-Length` before anything is allocated, else `413`;
+  - the head at most 16 KiB and 64 header lines, counted while it is read, else `431`; the body at most 8 MiB, checked
+    against `Content-Length` before anything is allocated, else `413`; twice the daemon's 4 MiB request bound, room
+    for the JSON-RPC envelope and a client's escaping around a call the daemon takes, such as a hand-in part of the size
+    its contract recommends; a stdio message has the same bound;
   - lines ended by `\r\n` only: a bare `\n`, a folded line, white space before a header's `:`, or a control byte in a
     value other than a tab is refused; only spaces and tabs around a value are dropped;
   - refused with `400` and closed: any `Transfer-Encoding`; a missing, repeated, or not purely decimal `Content-Length`;

@@ -27,8 +27,12 @@ record HttpRequestHead(String method, String target, Map<String, String> headers
     /** The most header lines a head has. */
     static final int MAX_LINES = 64;
 
-    /** The most bytes a body has. */
-    static final int MAX_BODY = 1024 * 1024;
+    /**
+     * The most bytes a body has: twice the daemon's 4 MiB request bound, room for the JSON-RPC
+     * envelope and a client's escaping around a call the daemon takes, while a peer still cannot
+     * make the process hold without bound.
+     */
+    static final int MAX_BODY = 8 * 1024 * 1024;
 
     /** Headers that must not appear twice, since two readers could each take another one. */
     private static final java.util.Set<String> ONCE =
@@ -147,7 +151,7 @@ record HttpRequestHead(String method, String target, Map<String, String> headers
             throw new Refused(400, "A POST needs Content-Length");
         }
         if (length.isEmpty()
-                || length.length() > 7
+                || length.length() > String.valueOf(MAX_BODY).length()
                 || !length.chars().allMatch(c -> c >= '0' && c <= '9')) {
             throw new Refused(400, "Content-Length is not a plain decimal number");
         }

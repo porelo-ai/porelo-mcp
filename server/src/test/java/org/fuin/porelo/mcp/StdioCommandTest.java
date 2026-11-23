@@ -230,6 +230,36 @@ class StdioCommandTest {
         }
     }
 
+    // Harm: a call the daemon accepts, such as a hand-in part of the size its contract recommends,
+    // refused here before the daemon sees it.
+    @Test
+    void aHandInPartOfTwoMebibytesReachesTheDaemon() throws Exception {
+        VarlinkServer.Method handIn = (parameters, replies) -> replies.last(Map.of("received", 0));
+        try (var daemon =
+                standIn(
+                        sets(List.of(), List.of("HandIn"), List.of(), List.of()),
+                        Map.of("HandIn", handIn))) {
+            Ran ran =
+                    run(
+                            daemon,
+                            request(
+                                    1,
+                                    "tools/call",
+                                    Map.of(
+                                            "name",
+                                            "HandIn",
+                                            "arguments",
+                                            McpHttpServerTest.handInPart())));
+
+            assertThat(ran.answers.get(0))
+                    .as("answered, not refused: %s", ran.err)
+                    .containsKey("result");
+            assertThat(daemon.calls.stream().map(Map.Entry::getKey))
+                    .as("the daemon got the call")
+                    .containsExactly(McpMethods.METHOD, "org.fuin.porelo.Tasks1.HandIn");
+        }
+    }
+
     // Harm: a daemon answering broken sets and every tool being offered for it.
     @Test
     void aSetThatIsMissingOrHoldsSomethingButNamesOffersNoTools() throws Exception {

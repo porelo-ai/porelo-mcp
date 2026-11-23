@@ -1,0 +1,2 @@
+title: Accept a request body or stdio message of up to 8 MiB instead of 1 MiB, so a call the daemon takes, such as a hand-in part of the 2 MiB its contract recommends, is no longer refused before it reaches the daemon.
+type: fixed

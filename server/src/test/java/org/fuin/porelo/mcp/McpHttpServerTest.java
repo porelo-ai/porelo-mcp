@@ -36,6 +36,7 @@ class McpHttpServerTest {
     private McpHttpServer server;
     private Thread serving;
     private final AtomicBoolean peerIsOwnUser = new AtomicBoolean(true);
+    private final List<String> called = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeEach
     void start() throws Exception {
@@ -48,7 +49,10 @@ class McpHttpServerTest {
         McpSession session =
                 new McpSession(
                         Tool.of(VarlinkIdl.parse(StandInDaemon.tasks1())),
-                        (method, parameters) -> Map.of(),
+                        (method, parameters) -> {
+                            called.add(method);
+                            return Map.of();
+                        },
                         "0");
         server =
                 new McpHttpServer(
@@ -221,8 +225,47 @@ class McpHttpServerTest {
                 .as("more than 64 header lines")
                 .isEqualTo(431);
         assertThat(status(exchange(bigBody)))
-                .as("a body over 1 MiB, refused before it is read")
+                .as("a body over its bound, refused before it is read")
                 .isEqualTo(413);
+    }
+
+    // Harm: a call the daemon accepts, such as a hand-in part of the size its contract recommends,
+    // refused here before the daemon sees it.
+    @Test
+    void aHandInPartOfTwoMebibytesReachesTheDaemon() throws Exception {
+        String call =
+                ContractToolsTest.request(
+                        1, "tools/call", Map.of("name", "HandIn", "arguments", handInPart()));
+        // A deadline that writing and parsing megabytes on a loaded machine does not reach.
+        try (Running big =
+                running(directory.resolve("big.sock"), client -> true, Duration.ofSeconds(30))) {
+            String answer = exchange(big.socket(), post(call, "Bearer " + TOKEN), false);
+
+            assertThat(status(answer))
+                    .as("answered: %s", answer.lines().findFirst())
+                    .isEqualTo(200);
+        }
+        assertThat(called)
+                .as("the daemon got the call")
+                .containsExactly("org.fuin.porelo.Tasks1.HandIn");
+    }
+
+    /** A hand-in part of 2 MiB decoded, the most the daemon's contract recommends. */
+    static Map<String, Object> handInPart() {
+        byte[] bytes = new byte[2 * 1024 * 1024];
+        return Map.of(
+                "task",
+                "t-1",
+                "name",
+                "big.bin",
+                "bytes",
+                bytes.length,
+                "sha256",
+                "0".repeat(64),
+                "offset",
+                0,
+                "part",
+                java.util.Base64.getEncoder().encodeToString(bytes));
     }
 
     // Harm: one stalled peer, without the token, holding every other connection up.
@@ -545,7 +588,10 @@ class McpHttpServerTest {
         McpSession session =
                 new McpSession(
                         Tool.of(VarlinkIdl.parse(StandInDaemon.tasks1())),
-                        (method, parameters) -> Map.of(),
+                        (method, parameters) -> {
+                            called.add(method);
+                            return Map.of();
+                        },
                         "0");
         McpHttpServer started = new McpHttpServer(at, token, session, peer, deadline);
         Thread thread =
