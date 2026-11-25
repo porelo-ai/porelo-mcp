@@ -3,16 +3,16 @@ name: porelo-issues
 description: Porelo rules for issues: where they are kept, the skeleton, states, sizes, open questions, finished and rejected issues, requirement hand-overs. Use when filing, analyzing or changing the state of an issue.
 ---
 
-> **BEGIN Shared Skill porelo-issues** · sha256 `b638082aa283a1f3` · changed 2026-11-21T16:39Z
+> **BEGIN Shared Skill porelo-issues** · sha256 `495dffb7734e7385` · changed 2026-11-25T07:23Z
 
 # porelo-issues
 
 ## Issues
 
 - **Every open task is an issue in GitHub Issues of the repository that builds it**, on the project's board that
-  `project.yml` names as its tracker; never a TODO in code or a note in a commit message. An issue is named by its
-  reference, `<repository>#<number>`; an old id from the Markdown issues is found in the issue's own text and never
-  given again.
+  the planning repository's `planner.yml` names as its tracker; never a TODO in code or a note in a commit message.
+  An issue is named by its reference, `<repository>#<number>`; an old id from the Markdown issues is found in the
+  issue's own text and never given again.
 - **Issues and stories are written through the planner, never by hand on GitHub's fields**: state, priority, size
   and worker are the board's fields, what blocks an issue its issue dependencies, a story's issues its sub-issues.
 - **An issue is self-contained: it states the contract it builds against in words and names no issue, sprint,
@@ -79,4 +79,4 @@ description: Porelo rules for issues: where they are kept, the skeleton, states,
 - **A requirement handover includes the text the receiving repository needs; where it came from goes
   into the handover, never into the issue.** Identify a proposal as a proposal until the operator accepts it.
 
-> **END Shared Skill porelo-issues** · sha256 `b638082aa283a1f3`
+> **END Shared Skill porelo-issues** · sha256 `495dffb7734e7385`
