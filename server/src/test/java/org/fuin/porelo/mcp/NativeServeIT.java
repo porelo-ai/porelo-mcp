@@ -93,7 +93,7 @@ class NativeServeIT {
             Process process =
                     new ProcessBuilder(
                                     executable(),
-                                    "stdio",
+                                    "tasks",
                                     "--daemon-socket",
                                     daemon.socket().toString())
                             .start();
@@ -133,6 +133,38 @@ class NativeServeIT {
             assertThat(StdioCommandTest.toolNames(answer))
                     .as("the methods the pin marks for agents")
                     .containsExactlyElementsOf(StandInDaemon.meantIn(StandInDaemon.tasks1()));
+        }
+    }
+
+    // Harm: a native build whose planner client - its HTTP, its signatures - was left out.
+    @Test
+    void plannerOffersThePlannersOperationsMarkedForAgentsAndCallsThem() throws Exception {
+        String described = PlannerCommandTest.description();
+        try (StandInPlanner planner = new StandInPlanner(PlannerCommandTest.TOKEN)) {
+            planner.openApi = described;
+            planner.body = "{\"id\":\"p#1\"}";
+            Path runtime = PlannerCommandTest.runtime(directory, planner.port());
+
+            PlannerCommandTest.Ran ran =
+                    PlannerCommandTest.run(
+                            List.of(executable(), "planner"),
+                            runtime,
+                            ContractToolsTest.request(1, "tools/list", Map.of()),
+                            ContractToolsTest.request(
+                                    2,
+                                    "tools/call",
+                                    Map.of(
+                                            "name",
+                                            "getIssue",
+                                            "arguments",
+                                            Map.of("project", "p", "issue", "p#1"))));
+
+            assertThat(StdioCommandTest.toolNames(ran.answers().get(0)))
+                    .as("the operations marked for agents: %s", ran.err())
+                    .containsExactlyInAnyOrderElementsOf(PlannerCommandTest.meant(described));
+            assertThat(((Map<?, ?>) ran.answers().get(1).get("result")).get("structuredContent"))
+                    .as("the planner's signed answer, its proof checked")
+                    .isEqualTo(Map.of("id", "p#1"));
         }
     }
 

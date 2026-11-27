@@ -70,11 +70,12 @@ public final class Main {
             PrintStream err,
             Map<String, String> environment) {
         final String mode = args.length == 0 ? "" : args[0];
-        if (!Set.of("serve", "stdio", "--check").contains(mode)) {
+        if (!Set.of("serve", "tasks", "planner", "--check").contains(mode)) {
             err.println(
                     "porelo-mcp: usage: porelo-mcp serve --task <name> --socket <path> --daemon-socket <path>"
                             + " [--limits <line>]");
-            err.println("       porelo-mcp stdio [--daemon-socket <path>] [--limits <line>]");
+            err.println("       porelo-mcp tasks [--daemon-socket <path>] [--limits <line>]");
+            err.println("       porelo-mcp planner [--limits <line>]");
             err.println("       porelo-mcp --check [--daemon-socket <path>] [--limits <line>]");
             return REFUSED;
         }
@@ -90,7 +91,8 @@ public final class Main {
         }
         return switch (mode) {
             case "--check" -> check(arguments.rest(), out, err, environment);
-            case "stdio" -> stdio(arguments.rest(), in, out, err, environment);
+            case "tasks" -> tasks(arguments.rest(), in, out, err, environment);
+            case "planner" -> planner(arguments, in, out, err, environment);
             default -> serve(arguments, in, out, err);
         };
     }
@@ -294,7 +296,7 @@ public final class Main {
      * line, with only the tools the daemon's sets allow; nothing but protocol goes to standard
      * output.
      */
-    static int stdio(
+    static int tasks(
             List<String> args,
             InputStream in,
             PrintStream out,
@@ -388,6 +390,51 @@ public final class Main {
         } catch (java.nio.file.InvalidPathException ex) {
             throw new StartRefused(option + " is no usable path: " + ex.getReason());
         }
+    }
+
+    /**
+     * Serves a person's own MCP client over standard input and output with the operations the
+     * person's running planner marks for agents, each call sent as the planner's signed REST
+     * request. A planner that is not running, or whose description does not parse, is named on
+     * standard error, and the client is offered no tools.
+     */
+    static int planner(
+            Arguments arguments,
+            InputStream in,
+            PrintStream out,
+            PrintStream err,
+            Map<String, String> environment) {
+        if (!arguments.rest().isEmpty()) {
+            err.println("porelo-mcp: planner takes no argument but " + LimitFactors.OPTION);
+            return REFUSED;
+        }
+        final PlannerClient client = PlannerClient.of(environment, arguments.limits());
+        List<Tool> tools = List.of();
+        Daemon daemon =
+                (method, parameters) -> {
+                    throw new VarlinkException("the planner offers no tools");
+                };
+        try {
+            final OpenApiTools.Description description = OpenApiTools.of(client.openApi());
+            tools = description.tools();
+            daemon = new PlannerDaemon(client, description);
+        } catch (Planner.Unavailable ex) {
+            err.println("porelo-mcp: no tools offered: " + ex.reason() + ": " + ex.getMessage());
+        } catch (IllegalArgumentException ex) {
+            err.println(
+                    "porelo-mcp: no tools offered: the planner's description is refused: "
+                            + ex.getMessage());
+        }
+        err.flush();
+        // The planner's "result" is its own, never a run's.
+        final McpSession session = new McpSession(tools, daemon, version(), false);
+        try {
+            StdioLines.serve(session, in, out);
+        } catch (IOException ex) {
+            err.println("porelo-mcp: standard input or output failed: " + ex.getMessage());
+            return FAILED;
+        }
+        return STOPPED;
     }
 
     /**

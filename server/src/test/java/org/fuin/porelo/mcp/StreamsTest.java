@@ -330,7 +330,7 @@ class StreamsTest {
                                 "-cp",
                                 System.getProperty("java.class.path"),
                                 Main.class.getName(),
-                                "stdio",
+                                "tasks",
                                 "--daemon-socket",
                                 daemon.socket().toString())
                         .redirectError(ProcessBuilder.Redirect.DISCARD)

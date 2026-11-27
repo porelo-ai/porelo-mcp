@@ -10,7 +10,7 @@
     </parent>
     <artifactId>porelo-mcp</artifactId>
     <name>Porelo MCP Server</name>
-    <description>Offers every method of the daemon's contract as an MCP tool</description>
+    <description>Offers every method of the daemon's contract marked for agents as an MCP tool</description>
     <properties>
         <!-- 0.5.1 on: Json.parseDecimals, so a number passes through exactly as it came. -->
         <porelo-wire.version>0.5.1-SNAPSHOT</porelo-wire.version>
@@ -289,7 +289,7 @@
                             <license>GPL-3.0-or-later</license>
                             <group>Development/Tools</group>
                             <summary>Porelo's daemon contract as MCP tools</summary>
-                            <description>Offers every method of the Porelo daemon's Tasks1 interface as an MCP tool: over HTTP on a task's own Unix socket when the daemon starts it, and over stdio for a person's own MCP client.</description>
+                            <description>Offers every method of the Porelo daemon's Tasks1 interface marked for agents as an MCP tool: over HTTP on a task's own Unix socket when the daemon starts it, and over stdio for a person's own MCP client, with the daemon's tools or the planner's.</description>
                             <requires>
                                 <require>libc.so.6(GLIBC_${mcp.glibc.floor})(64bit)</require>
                                 <require>libz.so.1(ZLIB_${mcp.zlib.floor})(64bit)</require>

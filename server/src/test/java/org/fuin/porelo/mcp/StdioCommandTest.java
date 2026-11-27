@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * {@code porelo-mcp stdio}: a person's own client gets only the methods marked for agents that the
+ * {@code porelo-mcp tasks}: a person's own client gets only the methods marked for agents that the
  * daemon's never-set leaves, and only protocol on standard output.
  */
 class StdioCommandTest {
@@ -299,7 +299,7 @@ class StdioCommandTest {
                         "-cp",
                         System.getProperty("java.class.path"),
                         Main.class.getName(),
-                        "stdio",
+                        "tasks",
                         "--daemon-socket",
                         daemon.socket().toString());
         Process process = builder.start();

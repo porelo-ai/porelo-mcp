@@ -205,7 +205,7 @@ class CheckCommandTest {
                                 "d",
                                 "--limits",
                                 "services=0"),
-                        run(Map.of(), "stdio", "--limits", "speed=2.0"),
+                        run(Map.of(), "tasks", "--limits", "speed=2.0"),
                         run(Map.of(), "--check", "--limits", "services=1.0,services=2.0"),
                         // Given, so never taken as the defaults a missing option means.
                         run(Map.of(), "--check", "--limits", ""));
@@ -237,7 +237,7 @@ class CheckCommandTest {
         Ran stdio =
                 run(
                         Map.of(),
-                        "stdio",
+                        "tasks",
                         "--daemon-socket",
                         none.toString(),
                         "--limits",

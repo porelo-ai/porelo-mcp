@@ -63,6 +63,18 @@ public final class McpSession {
     private final Map<String, Tool> tools = new LinkedHashMap<>();
     private final Daemon daemon;
     private final String version;
+    private final boolean runResults;
+
+    /**
+     * Serves the daemon's tools, a run's {@code result} shown as the daemon's contract says.
+     *
+     * @param tools The tools offered, by their order.
+     * @param daemon Where a call goes.
+     * @param version This program's version, as {@code initialize} names it.
+     */
+    public McpSession(List<Tool> tools, Daemon daemon, String version) {
+        this(tools, daemon, version, true);
+    }
 
     /**
      * Serves the given tools.
@@ -70,8 +82,10 @@ public final class McpSession {
      * @param tools The tools offered, by their order.
      * @param daemon Where a call goes.
      * @param version This program's version, as {@code initialize} names it.
+     * @param runResults Whether a reply's {@code result} is the daemon's run result, shown first;
+     *     another backend's reply is shown whole, as it came.
      */
-    public McpSession(List<Tool> tools, Daemon daemon, String version) {
+    public McpSession(List<Tool> tools, Daemon daemon, String version, boolean runResults) {
         for (final Tool tool : tools) {
             if (this.tools.put(tool.name(), tool) != null) {
                 throw new IllegalArgumentException("Two tools are named '" + tool.name() + "'");
@@ -79,6 +93,7 @@ public final class McpSession {
         }
         this.daemon = daemon;
         this.version = version;
+        this.runResults = runResults;
     }
 
     /**
@@ -395,7 +410,9 @@ public final class McpSession {
     private Map<String, Object> toolResult(
             Map<String, Object> content, boolean isError, boolean modern) {
         final Map<String, Object> result = new LinkedHashMap<>();
-        result.put("content", isError ? List.of(text(Json.write(content))) : texts(content));
+        result.put(
+                "content",
+                isError || !runResults ? List.of(text(Json.write(content))) : texts(content));
         result.put("structuredContent", content);
         result.put("isError", isError);
         return modern ? complete(result) : result;

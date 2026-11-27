@@ -88,8 +88,9 @@ an RPM package of its own.
 - **No secret value ever leaves through it.** The contract gives none, and a tool that would carry one is a fault of the
   contract, raised with porelo.
 - **It never listens on TCP.** For a task it serves MCP over HTTP on a Unix socket of mode `0600`, with a bearer token
-  and the peer's credentials checked; for a person's own client it speaks stdio. How `porelod` starts and binds it is
-  [doc/binding.md](doc/binding.md), the contract with porelo.
+  and the peer's credentials checked; for a person's own client it speaks stdio: `porelo-mcp tasks` with the daemon's
+  tools, `porelo-mcp planner` with the running planner's operations marked for agents, never on a task's socket. How
+  `porelod` starts and binds it is [doc/binding.md](doc/binding.md), the contract with porelo.
 - **Under `GPL-3.0-or-later`, and nothing goes to Maven Central.** Nothing builds against an artifact here.
 
 ## Work in this repository

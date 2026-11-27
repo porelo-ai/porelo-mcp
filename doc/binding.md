@@ -124,8 +124,11 @@ client may use either.
 
 ## Outside a task: stdio
 
-- `porelo-mcp stdio [--daemon-socket <path>] [--limits <line>]` serves a person's own MCP client on the host over
+- `porelo-mcp tasks [--daemon-socket <path>] [--limits <line>]` serves a person's own MCP client on the host over
   standard input and output, on the person's own daemon socket, by default `$XDG_RUNTIME_DIR/porelo/porelod.sock`.
+- `porelo-mcp planner [--limits <line>]` serves a person's own MCP client over standard input and output with the
+  person's running planner's operations (see [The person's planner's operations](#the-persons-planners-operations));
+  the planner is never offered on a task's socket.
 - It offers the methods the daemon marks for agents (see [Tools](#tools)), and never one of porelo's hand-kept
   never-set - such as stopping every task, clearing the vault, or panic - whatever its marker says.
 - The never-set comes from the daemon at run time, by `org.fuin.porelo.Tasks1.McpMethods() -> (never: []string)`, each
@@ -176,6 +179,24 @@ client may use either.
   another port or token. A read may take 30 seconds and a write 2 minutes, the proof 60 seconds, each times the
   services factor.
 
+## The person's planner's operations
+
+- At start, `porelo-mcp planner` reads the running planner's description, `GET /openapi` (OpenAPI 3.1, JSON), once. Each
+  operation marked `x-mcp: true` is one tool, named by its `operationId`, described by its summary and description;
+  every other operation is no tool. An operation added to the planner and marked arrives as a tool without a change
+  here.
+- A tool's input is one object: the operation's path and query parameters by name, and its JSON request body as
+  `body`; its schemas come from the description, every `$ref` resolved into the tool's own `$defs`. Its output schema
+  is the lowest 2xx answer's JSON schema.
+- A call fills the path, each argument percent-encoded as one segment (an empty one, `.` and `..` are refused), adds the
+  query in the declared order and sends `body` as JSON, signed as above. A 2xx answer's body is the result, an object as
+  it came, any other JSON value or text under `result`. Any other status is a tool error named by the problem body's
+  `title` (or `HttpStatus<code>`), with `{"status": <code>, "body": <the body>}` as it came. An argument that cannot be
+  sent is refused as `InvalidArgument` before anything is sent.
+- A planner that is not running, or that cannot be proved or believed, is named on standard error at start with its
+  reason (`NOT_RUNNING`, `ADDRESS_REFUSED`, `PROOF_REFUSED`, ...), and the client is offered no tools; a call that finds
+  it gone later is a JSON-RPC error (`-32603`) naming the reason.
+
 ## Checking it
 
 - `porelo-mcp --check [--daemon-socket <path>] [--limits <line>]` says whether it reaches the daemon, with the version
@@ -184,5 +205,6 @@ client may use either.
 - It exits 0 when it reached the daemon: `GetInfo` named a version and `GetInterfaceDescription` described
   `org.fuin.porelo.Tasks1`. It exits 3, naming what it tried, when it did not, or when `XDG_RUNTIME_DIR` is unset or
   empty and no socket was given. It exits 2 for a wrong argument, and 64 for a refused limits line.
-- `stdio` and `--check` take `--limits` as `serve` does, so a client that passes the line on to what it starts is never
-  refused for it; neither has a time limit of its own.
+- `tasks`, `planner` and `--check` take `--limits` as `serve` does, so a client that passes the line on to what it starts is never
+  refused for it; `tasks` and `--check` have no time limit of their own, and `planner` holds each proof and request to
+  the planner within its limit times `services`.

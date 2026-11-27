@@ -1,0 +1,2 @@
+title: 'Serve a person''s own MCP client with the running planner''s operations as tools with "porelo-mcp planner" - one tool per operation its description marks "x-mcp: true", each call sent unchanged as the planner''s signed REST request and its refusal returned with status, name and words - and rename "porelo-mcp stdio" to "porelo-mcp tasks".'
+type: added
