@@ -83,9 +83,8 @@ class PackagesIT {
                 List<String> lines = new ArrayList<>(out.lines().toList());
                 assertThat(lines.remove(0)).as("the version").contains("9.9.9-standin");
                 assertThat(lines)
-                        .as("every method")
-                        .containsExactlyElementsOf(
-                                ContractToolsTest.methodsDeclaredIn(description));
+                        .as("every method marked for agents")
+                        .containsExactlyElementsOf(StandInDaemon.meantIn(description));
             }
         }
     }

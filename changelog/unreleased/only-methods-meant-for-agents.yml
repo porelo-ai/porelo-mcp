@@ -1,0 +1,2 @@
+title: 'Offer as a tool only a daemon method marked "x-mcp: true" in the contract, naming on standard error every method whose marker is missing or malformed; over stdio McpMethods now answers only the never-set, which is still refused here as well, and the judgement notice is gone.'
+type: changed

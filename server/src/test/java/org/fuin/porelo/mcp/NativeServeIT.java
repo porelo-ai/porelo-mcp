@@ -82,17 +82,13 @@ class NativeServeIT {
     // Harm: a native stdio that writes something else than protocol, offers tools it should not,
     // names no version, or fails at its end.
     @Test
-    void stdioNamesItsVersionListsOnlyTheDaemonsSetsAndEndsWithItsInput() throws Exception {
+    void stdioNamesItsVersionListsOnlyTheMethodsMarkedForAgentsAndEndsWithItsInput()
+            throws Exception {
         Map<String, org.fuin.porelo.wire.varlink.VarlinkServer.Method> methods =
                 Map.of(
                         "McpMethods",
                         (parameters, replies) ->
-                                replies.last(
-                                        StdioCommandTest.sets(
-                                                java.util.List.of("List"),
-                                                java.util.List.of(),
-                                                java.util.List.of("Panic"),
-                                                java.util.List.of())));
+                                replies.last(StdioCommandTest.never(java.util.List.of("Panic"))));
         try (var daemon = new StandInDaemon(directory, StandInDaemon.tasks1(), methods)) {
             Process process =
                     new ProcessBuilder(
@@ -135,8 +131,8 @@ class NativeServeIT {
                     .as("the version the build gave it")
                     .isEqualTo(System.getProperty("mcp.version"));
             assertThat(StdioCommandTest.toolNames(answer))
-                    .as("the reading set alone")
-                    .containsExactly("List");
+                    .as("the methods the pin marks for agents")
+                    .containsExactlyElementsOf(StandInDaemon.meantIn(StandInDaemon.tasks1()));
         }
     }
 

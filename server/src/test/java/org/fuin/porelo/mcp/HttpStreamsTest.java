@@ -322,10 +322,6 @@ class HttpStreamsTest {
     private void start(Map<String, VarlinkServer.Method> methods) throws Exception {
         Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
         Map<String, VarlinkServer.Method> all = new java.util.HashMap<>(methods);
-        Map<String, Object> sets =
-                StdioCommandTest.sets(
-                        List.of("List", "Tail", "Watch"), List.of(), List.of(), List.of());
-        all.put("McpMethods", (parameters, replies) -> replies.last(sets));
         daemon = new StandInDaemon(directory, StandInDaemon.tasks1(), all);
         socket = directory.resolve("task.sock");
         McpSession session =

@@ -75,12 +75,13 @@ into a shared skill or this block, one that concerns only this machine into `.AG
 Porelo's daemon contract offered as MCP tools, by one program, `porelo-mcp`, shipped as a native executable in a DEB and
 an RPM package of its own.
 
-- **Every method of the daemon's `org.fuin.porelo.Tasks1` interface is a tool**, generated from the interface the daemon
-  describes at run time, never written by hand: a method added to the contract arrives as a tool without a change here.
+- **Every method of the daemon's `org.fuin.porelo.Tasks1` interface marked for agents is a tool**, generated from the
+  interface the daemon describes at run time, never written by hand: a method added to the contract and marked
+  `x-mcp: true` arrives as a tool without a change here.
 - **It holds no rule of its own.** Every answer and every refusal is the daemon's; a refusal reaches the agent as an MCP
   error with the refusal's name and parameters as they came. What a task may call is decided by `porelod`, never here.
-  Over stdio it offers only the sets the daemon names, and refuses the daemon's never-set once more itself, so a fault
-  on one side alone opens nothing.
+  Over stdio it offers only the methods the daemon marks for agents, and refuses the daemon's never-set once more
+  itself, so a fault on one side alone opens nothing.
 - **It never parses the `porelo` command line's output and never reads Porelo's files**; it speaks only Varlink to the
   daemon. The one file it reads is the person's planner's address file, to call the planner as the window does
   ([doc/binding.md](doc/binding.md#the-persons-planner)).

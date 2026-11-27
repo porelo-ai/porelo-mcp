@@ -297,11 +297,10 @@ class StreamsTest {
 
     private StandInDaemon standIn(Map<String, VarlinkServer.Method> more) throws IOException {
         Map<String, VarlinkServer.Method> methods = new java.util.HashMap<>(more);
-        Map<String, Object> sets =
-                StdioCommandTest.sets(
-                        List.of("List", "Tail", "Watch"), List.of(), List.of(), List.of());
-        methods.put("McpMethods", (parameters, replies) -> replies.last(sets));
-        return new StandInDaemon(directory, StandInDaemon.tasks1(), methods);
+        methods.put(
+                "McpMethods",
+                (parameters, replies) -> replies.last(StdioCommandTest.never(List.of())));
+        return new StandInDaemon(directory, StandInDaemon.tasks1Meant("Tail", "Watch"), methods);
     }
 
     private static String call(int id, String tool, Map<String, Object> arguments, String token) {

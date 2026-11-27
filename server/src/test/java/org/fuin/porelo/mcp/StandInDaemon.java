@@ -24,6 +24,40 @@ final class StandInDaemon implements AutoCloseable {
         }
     }
 
+    /**
+     * The pinned Tasks1 with the named methods marked for agents, whatever the pin says of them:
+     * for tests of the protocol, which need a streaming or writing tool, not of the markers.
+     */
+    static String tasks1Meant(String... names) throws IOException {
+        String text = tasks1();
+        for (String name : names) {
+            String method = "\nmethod " + name + "(";
+            int at = text.indexOf(method);
+            if (at < 0) {
+                throw new IllegalArgumentException("Tasks1 declares no method " + name);
+            }
+            int lineStart = text.lastIndexOf('\n', at - 1) + 1;
+            String above = text.substring(lineStart, at);
+            text =
+                    above.startsWith("# " + AgentMarker.WORD + ":")
+                            ? text.substring(0, lineStart) + "# x-mcp: true" + text.substring(at)
+                            : text.substring(0, at) + "\n# x-mcp: true" + text.substring(at);
+        }
+        return text;
+    }
+
+    /** The methods a description marks for agents, read from its text alone. */
+    static List<String> meantIn(String description) {
+        List<String> meant = new java.util.ArrayList<>();
+        java.util.regex.Matcher marked =
+                java.util.regex.Pattern.compile("\n# x-mcp: true\nmethod (\\w+)\\(")
+                        .matcher(description);
+        while (marked.find()) {
+            meant.add(marked.group(1));
+        }
+        return meant;
+    }
+
     /** The calls the stand-in received, as method and parameters. */
     final List<Map.Entry<String, Map<String, Object>>> calls = new CopyOnWriteArrayList<>();
 

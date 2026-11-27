@@ -17,24 +17,18 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * {@code porelo-mcp stdio}: a person's own client gets only what the daemon's sets allow, and only
- * protocol on standard output.
+ * {@code porelo-mcp stdio}: a person's own client gets only the methods marked for agents that the
+ * daemon's never-set leaves, and only protocol on standard output.
  */
 class StdioCommandTest {
 
     @TempDir Path directory;
 
-    // Harm: a destructive method reaching an agent because the daemon's writing set named it by
-    // fault.
+    // Harm: a destructive method reaching an agent because its marker says true by fault.
     @Test
-    void aMethodInNeverIsNoToolAndNeverReachesTheDaemonWhateverWritingSays() throws Exception {
-        try (var daemon =
-                standIn(
-                        sets(
-                                List.of("List"),
-                                List.of("Stop", "Panic"),
-                                List.of("Panic"),
-                                List.of()))) {
+    void aMethodInNeverIsNoToolAndNeverReachesTheDaemonWhateverItsMarkerSays() throws Exception {
+        String description = StandInDaemon.tasks1Meant("Stop", "Panic");
+        try (var daemon = standIn(description, never(List.of("Panic")), Map.of())) {
             Ran ran =
                     run(
                             daemon,
@@ -46,8 +40,15 @@ class StdioCommandTest {
 
             assertThat(ran.code).as("ends with its input").isEqualTo(0);
             assertThat(toolNames(ran.answers.get(0)))
-                    .as("reading and writing, never Panic")
-                    .containsExactly("List", "Stop");
+                    .as("every method marked for agents but Panic")
+                    .containsExactlyElementsOf(
+                            StandInDaemon.meantIn(description).stream()
+                                    .filter(name -> !name.equals("Panic"))
+                                    .toList())
+                    .contains("List", "Stop");
+            assertThat(ran.err)
+                    .as("the contradiction named")
+                    .contains("Panic is marked for agents, yet the daemon never offers it");
             assertThat(((Map<?, ?>) ran.answers.get(1).get("error")).get("code"))
                     .as("Panic is no tool")
                     .isEqualTo(new java.math.BigDecimal(-32602));
@@ -66,7 +67,8 @@ class StdioCommandTest {
                         replies.last(Map.of("tasks", List.of(), "unrecognized", List.of()));
         try (var daemon =
                 standIn(
-                        sets(List.of("List"), List.of("Stop"), List.of(), List.of()),
+                        StandInDaemon.tasks1Meant("Stop"),
+                        never(List.of()),
                         Map.of("List", list))) {
             Ran ran =
                     run(
@@ -125,10 +127,7 @@ class StdioCommandTest {
                         "2026-07-28",
                         McpSession.CLIENT_CAPABILITIES,
                         Map.of());
-        try (var daemon =
-                standIn(
-                        sets(List.of("List"), List.of(), List.of(), List.of()),
-                        Map.of("List", list))) {
+        try (var daemon = standIn(StandInDaemon.tasks1(), never(List.of()), Map.of("List", list))) {
             Ran ran =
                     run(
                             daemon,
@@ -152,42 +151,30 @@ class StdioCommandTest {
         }
     }
 
-    // Harm: a writing method offered that the person never named.
+    // Harm: a method porelo never judged fit for agents offered to one.
     @Test
-    void withNoListExactlyTheReadingSetIsOffered() throws Exception {
-        try (var daemon =
-                standIn(sets(List.of("List", "Logs"), List.of(), List.of("Panic"), List.of()))) {
+    void exactlyTheMethodsMarkedForAgentsAreOfferedAndAnUnmarkedOneIsNamed() throws Exception {
+        String description =
+                StandInDaemon.tasks1()
+                        .replaceFirst("\n# x-mcp: [^\n]*\nmethod Stop\\(", "\nmethod Stop(");
+        assertThat(description)
+                .as("Stop's marker taken out")
+                .contains("method Stop(")
+                .doesNotContain("x-mcp: true\nmethod Stop(");
+        try (var daemon = standIn(description, never(List.of()), Map.of())) {
             Ran ran = run(daemon, request(1, "tools/list", Map.of()));
 
             assertThat(toolNames(ran.answers.get(0)))
-                    .as("the reading set, in the interface's order")
-                    .containsExactlyInAnyOrder("List", "Logs");
-        }
-    }
-
-    // Harm: a person unaware that their client may act in their name.
-    @Test
-    void aJudgementMethodOfferedIsNamedAtStartAndNoneOfferedNamesNone() throws Exception {
-        try (var daemon =
-                standIn(
-                        sets(
-                                List.of("List"),
-                                List.of("Approve"),
-                                List.of(),
-                                List.of("Approve", "Clear")))) {
-            Ran ran = run(daemon, request(1, "tools/list", Map.of()));
-
-            assertThat(toolNames(ran.answers.get(0))).as("Approve offered").contains("Approve");
-            assertThat(ran.err).as("Approve named").contains("Approve").contains("judgement");
-            assertThat(ran.err).as("Clear is not offered, so not named").doesNotContain("Clear");
-        }
-        try (var daemon =
-                standIn(sets(List.of("List"), List.of(), List.of(), List.of("Approve")))) {
-            Ran ran = run(daemon, request(1, "tools/list", Map.of()));
-
+                    .as("the methods the pin marks true, in the interface's order")
+                    .containsExactlyElementsOf(StandInDaemon.meantIn(description))
+                    .doesNotContain("Panic", "Approve", "Stop");
             assertThat(ran.err)
-                    .as("no judgement offered, no such line")
-                    .doesNotContain("judgement");
+                    .as("an unmarked method named")
+                    .contains("Stop is no tool: it carries no marker");
+            assertThat(ran.err)
+                    .as("a method marked false with its reason is left out without a word")
+                    .doesNotContain("Approve")
+                    .doesNotContain("Panic");
         }
     }
 
@@ -208,7 +195,7 @@ class StdioCommandTest {
     // Harm: one overlong message holding memory without bound, or ending the session for good.
     @Test
     void aMessageOverItsBoundIsRefusedAndTheNextOneIsAnswered() throws Exception {
-        try (var daemon = standIn(sets(List.of("List"), List.of(), List.of(), List.of()))) {
+        try (var daemon = standIn(StandInDaemon.tasks1(), never(List.of()), Map.of())) {
             String tooLong =
                     "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"x\":\""
                             + "a".repeat(StdioLines.MAX_LINE)
@@ -233,7 +220,8 @@ class StdioCommandTest {
         VarlinkServer.Method handIn = (parameters, replies) -> replies.last(Map.of("received", 0));
         try (var daemon =
                 standIn(
-                        sets(List.of(), List.of("HandIn"), List.of(), List.of()),
+                        StandInDaemon.tasks1Meant("HandIn"),
+                        never(List.of()),
                         Map.of("HandIn", handIn))) {
             Ran ran =
                     run(
@@ -256,21 +244,11 @@ class StdioCommandTest {
         }
     }
 
-    // Harm: a daemon answering broken sets and every tool being offered for it.
+    // Harm: a daemon answering a broken never-set and every marked tool being offered for it.
     @Test
-    void aSetThatIsMissingOrHoldsSomethingButNamesOffersNoTools() throws Exception {
+    void aNeverSetThatIsMissingOrHoldsSomethingButNamesOffersNoTools() throws Exception {
         List<Map<String, Object>> broken =
-                List.of(
-                        Map.of("reading", List.of("List")),
-                        Map.of(
-                                "reading",
-                                List.of("List", 42),
-                                "writing",
-                                List.of(),
-                                "never",
-                                List.of(),
-                                "judgement",
-                                List.of()));
+                List.of(Map.of("reading", List.of("List")), Map.of("never", List.of("Panic", 42)));
         for (Map<String, Object> each : broken) {
             Path place = java.nio.file.Files.createTempDirectory(directory, "broken");
             Map<String, VarlinkServer.Method> methods =
@@ -284,24 +262,17 @@ class StdioCommandTest {
         }
     }
 
-    static Map<String, Object> sets(
-            List<String> reading,
-            List<String> writing,
-            List<String> never,
-            List<String> judgement) {
-        return Map.of(
-                "reading", reading, "writing", writing, "never", never, "judgement", judgement);
+    /** McpMethods' answer, as porelod gives it. */
+    static Map<String, Object> never(List<String> never) {
+        return Map.of("never", never);
     }
 
-    private StandInDaemon standIn(Map<String, Object> sets) throws IOException {
-        return standIn(sets, Map.of());
-    }
-
-    private StandInDaemon standIn(Map<String, Object> sets, Map<String, VarlinkServer.Method> more)
+    private StandInDaemon standIn(
+            String description, Map<String, Object> sets, Map<String, VarlinkServer.Method> more)
             throws IOException {
         Map<String, VarlinkServer.Method> methods = new java.util.HashMap<>(more);
         methods.put("McpMethods", (parameters, replies) -> replies.last(sets));
-        return new StandInDaemon(directory, StandInDaemon.tasks1(), methods);
+        return new StandInDaemon(directory, description, methods);
     }
 
     @SuppressWarnings("unchecked")

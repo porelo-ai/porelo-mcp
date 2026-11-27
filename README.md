@@ -4,8 +4,9 @@
 
 > **Crazy chicken - just hatched.** Interfaces, formats and even the purpose may change any day. Use it only to try ideas, never to build on.
 
-Porelo's daemon contract offered as MCP tools. Every method of the daemon's `org.fuin.porelo.Tasks1` interface becomes
-a tool, generated from the interface the daemon describes, so a method added there arrives as a tool without hand work.
+Porelo's daemon contract offered as MCP tools. Every method of the daemon's `org.fuin.porelo.Tasks1` interface marked
+for agents becomes a tool, generated from the interface the daemon describes, so a method added and marked there arrives
+as a tool without hand work.
 It holds no rule of its own: every answer and every refusal is the daemon's.
 
 - [server](server/README.md) - the `porelo-mcp` program.

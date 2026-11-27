@@ -550,7 +550,8 @@ type Task (
   # attended session, which has none, and for a task whose run predates this field.
   minutes: int,
   # Where its reviewed work landed, one entry per branch, readable by a task started with readLanded naming
-  # it. [] while its work waits at the gate, and for a task that never landed anything.
+  # it. [] while its work waits at the gate, where only a task started at exactly that push (Start's
+  # place.gatePush) sees it, and for a task that never landed anything.
   landed: []Landed,
   # Whether its commits are signed by a key of its own, certified at its start by a person the
   # project's access file admits, and judged at its gate when they arrive. false for a task whose
@@ -727,7 +728,8 @@ type Task (
   # Set when this start follows no builds because the host's configured vault entry is absent.
   # The sentence remains in buildProblem; afterStore is "restart", even once the entry is stored.
   buildsCredential: ?MissingCredential,
-  # The rights the task's start recorded, written out: a start that named none shows the default set.
+  # The rights the task's start recorded, written out: a start that named none shows the default set
+  # at own work and [] for a task that only reads or has no workspace.
   rights: []Right,
   # The tasks whose landed work it reads, as its start recorded them; [] for none.
   readLanded: []string,
@@ -899,6 +901,7 @@ type Log (
 # unrecognized names the containers named like a task that are not one: Porelo holds no container id for them
 # (made before it recorded one, or by something else), so no method acts on them and none adopts them. A client
 # shows them as what they are, never as tasks: removing one removes what is in it.
+# x-mcp: true
 method List() -> (tasks: []Task, unrecognized: []string)
 
 # The task's own declaration of how its work ended, carried only by a task socket whose project's
@@ -912,18 +915,21 @@ method List() -> (tasks: []Task, unrecognized: []string)
 # activity DONE and state "done"; BLOCKED leaves activity as observed. Work that resumes output is WORKING
 # again without losing the declaration; ENDED is unchanged. A later start clears the declaration.
 # This replaces no completion message to the room, and neither stops nor removes the container.
+# x-mcp: true
 method Done(task: string, outcome: ?(DONE, BLOCKED), why: ?string) -> ()
 
 # The task reports back to whoever started it: plain text and a one-line kind, kept with the task's
 # records and numbered in the task's own sequence. On the task socket only, when the project's
 # limits.reports is above 0 and its mcp.methods includes Report; past the bound, NotAllowed names it.
 # task must be that socket's task, else NotItsOwn. Porelo passes kind through unread and never checks it.
+# x-mcp: true
 method Report(task: string, kind: string, text: string) -> (seq: int)
 
 # The reports after `after` (all when absent), oldest first, at most 1 MiB; `more` when some were
 # left out. Kept as long as the task's records (records.kept_days), a removed task's included. Porelo
 # keeps nothing about who read what: a reader keeps the last seq it took. last is the task's last
 # sequence number.
+# x-mcp: false what any task reported back, for whoever started it: never another agent's prompt
 method Reports(task: string, after: ?int) -> (reports: []TaskReport, last: int, more: bool)
 
 # The file a task hands back, as the host took it, read from this machine's files alone: also after
@@ -934,6 +940,7 @@ method Reports(task: string, after: ?int) -> (reports: []TaskReport, last: int, 
 # only when state is "handed". Before anything was taken this answers state "missing" with bytes 0.
 # NoResultNamed for a task started without Start's result; NoSuchTask for a name no task holds and
 # nothing was kept for.
+# x-mcp: false what any task handed back, another project's too, for the person to read
 method Result(task: string) -> (name: string, state: string, bytes: int, content: ?string)
 
 # The same answer, again whenever it changes.
@@ -944,6 +951,7 @@ method Result(task: string) -> (name: string, state: string, bytes: int, content
 # Called with "more" it sends the whole list on every change and nothing in between. The age
 # in state is deliberately not a change: it moves on its own, and a view that redrew for it
 # would redraw every second forever.
+# x-mcp: true
 method Watch() -> (tasks: []Task, unrecognized: []string)
 
 # The purposes a credential may serve: "git" and "any". "git" is the only one anything reads
@@ -984,6 +992,7 @@ type StartStep (
 #
 # The task outlives this call and this connection either way. Closing the socket mid-build does not
 # cancel it; List shows it afterwards.
+# x-mcp: true
 method Start(
   # Task name within the project. Omitted, the repository's name, or the next free one (my-first-2), never an
   # existing task's.
@@ -1180,7 +1189,9 @@ method Start(
   # ahead. CanStart does not ask the host to follow and does not answer this.
   work: ?[](issue: string, phase: string),
   # The rights the run holds, actions and judgments in one list. Absent takes the default set, push and
-  # reply; an empty list is a start holding no right and never becomes the default set. A start whose
+  # reply, for own work alone; with readOnly, allRepositories or noGate absent is the empty set, and push
+  # named there is refused as StartRuleBroken with the rule pushWithoutOwnWork. An empty list is a start
+  # holding no right and never becomes the default set. A start whose
   # place is another task's work has no default: absent there is refused as StartRuleBroken with the rule
   # foreignWorkNamesNoRights. A list that breaks one of Porelo's own start rules is refused as
   # StartRuleBroken before anything is made. A task brought back keeps its recorded parts when the start
@@ -1287,6 +1298,7 @@ type CertifyRequest (
 # Answers a start waiting for its certificate, with the certificate or with the words it ends with,
 # one of them. What comes back is checked as any other, and the start refuses what does not hold. A
 # start waits five minutes, or until its stream closes. An id no start waits by is NoSuchStart.
+# x-mcp: false the person's own decision about a start or a project
 method Certify(start: string, certificate: ?string, refused: ?string) -> ()
 
 # Begins a task's run at the pull request its start recorded as its place, in this daemon, which keeps
@@ -1296,6 +1308,7 @@ method Certify(start: string, certificate: ?string, refused: ?string) -> ()
 # conversation. run is the run's number at that place, head the commit it is pinned to. A task whose
 # recorded place is no pull request is InvalidParameter("task"); the refusals are Start's:
 # NoSuchPullRequest, UnknownForge, NotTheTasksPush, PlaceUnreadable. Never offered on a task's socket.
+# x-mcp: false a run begins for a task its start placed, never at a task's own asking
 method BeginRun(
   # Container name.
   task: string
@@ -1306,6 +1319,7 @@ method BeginRun(
 # stopped task does the same on its own. outcome: MOVED (moved names each branch that moved and the commit it names
 # now; told says whether the agent heard), UNCHANGED, NOT_GATED (an online task, which fetches its upstream itself),
 # FAILED (detail says why). A name that is no task here is NoSuchTask.
+# x-mcp: false reaches the network or the person's forge with the person's credentials, and writes into a task's inbox as the person
 method RefreshTask(task: string) -> (outcome: string, moved: [string]string, detail: string, told: bool)
 
 # Stops a task and the helpers Porelo started beside it.
@@ -1316,6 +1330,7 @@ method RefreshTask(task: string) -> (outcome: string, moved: [string]string, det
 #
 # On the way down it writes what the task holds, while that is still knowable - whoever removes it
 # later cannot ask the container itself.
+# x-mcp: true
 method Stop(
   # Container name.
   task: string
@@ -1341,6 +1356,7 @@ method Stop(
 #
 # The record NOTHING_KNOWS rests on is written by Stop. Where that record lives decides whether
 # this guard survives a restart of the machine; see the note on the runtime directory.
+# x-mcp: false removes what cannot be had back
 method Remove(
   # Container name.
   task: string,
@@ -1387,6 +1403,7 @@ type PanickedTask (
 # a task back with the work it had. An interface that presented this as a cleanup would send
 # somebody looking for work that is still exactly where it was. Discarding is a separate decision,
 # made afterwards, by name, with Remove.
+# x-mcp: false it stops every task at once
 method Panic(
   # Lists what would be stopped and stops nothing.
   dryRun: ?bool
@@ -1404,6 +1421,7 @@ method Panic(
 )
 
 # Drops the cached passphrase, device share and daemon-owned host share.
+# x-mcp: false the vault is the person's own
 method Lock(
   # When supplied, must resolve to this daemon's vault.
   vault: ?string
@@ -1597,6 +1615,7 @@ type MissingCredential (
 #
 # What it CANNOT tell you: whether the credential is still valid at the provider. It answers that
 # something usable is stored under the name this run would look for, which is a different claim.
+# x-mcp: false reaches the network or the person's forge with the person's credentials, and names vault entries
 method CanStart(
   # Project NAME, as Start takes it. Omitted, no project is checked - which is how an interface
   # asks about the machine before a project has been chosen. A name this machine does not have is
@@ -1722,6 +1741,7 @@ method CanStart(
 # answers READY for them, or CHANGED when porelo.yml moved since the hash was answered: nothing is
 # allowed, and CanStart shows the new list. A name that is no repository of the project is CHANGED
 # too, with nothing to allow.
+# x-mcp: false the person's own decision about a start or a project
 method AllowSettings(repository: string, hash: string, project: ?string) -> (outcome: string)
 
 # Gives a task a changeable caption, or removes one.
@@ -1730,6 +1750,7 @@ method AllowSettings(repository: string, hash: string, project: ?string) -> (out
 # pushes to, the workspace and the log files - and moving a ref that may have unreviewed pushes
 # behind it is a different and much larger thing. This changes what a person reads in a list and
 # nothing else.
+# x-mcp: false a caption is the person's, on any task
 method Label(
   # Task name, as List reports it.
   task: string,
@@ -1752,6 +1773,7 @@ method Label(
 # The first task in a project otherwise waits minutes for something that has nothing to do with
 # the work. Use with "more": a build takes minutes, and showing nothing for that long is
 # indistinguishable from having hung.
+# x-mcp: false reaches the network or the person's forge with the person's credentials, and builds for minutes
 method Prepare(
   # The name of a project, or the absolute path of its file as Projects reports it, which answers
   # for that name. An organization's project is read anew as a start reads it, with a start's
@@ -1796,6 +1818,7 @@ method Prepare(
 # list of names would show an empty viewer for a file that was never going to exist, and would
 # never show one a later release adds. Empty for a task whose state directory is gone, which is
 # what removal does.
+# x-mcp: true
 method Logs(task: string) -> (logs: []Log)
 
 # Keeps a task's logs, and what Porelo says about it, in one archive on this machine.
@@ -1805,6 +1828,7 @@ method Logs(task: string) -> (logs: []Log)
 # status, files and talk log as text, and SHA256SUMS. A daemon has no current directory, so it is
 # written there and 'path' says where; an interface offers to save it from there. What the agent
 # itself printed (task.log) goes in only with 'withAgentOutput', since it may hold confidential data.
+# x-mcp: false an export for the person: writes an archive on every call
 method LogArchive(task: string, withAgentOutput: ?bool) -> (path: string, files: []string)
 
 # What a task holds that never reached the gate.
@@ -1821,6 +1845,7 @@ method LogArchive(task: string, withAgentOutput: ?bool) -> (path: string, files:
 # 'asOf' is absent while the task runs, because the answer is current. For a stopped task it is
 # when the answer was true: the workspace lives inside the container, so once it stops the only
 # source is what the stop wrote down.
+# x-mcp: true
 method WorkHeld(
   # Container name.
   task: string
@@ -1851,6 +1876,7 @@ type ImageSetting (
 # label over 1 MiB answers the same. One limit stays: an image built before this, from a base image that itself
 # carries this label, answers with the base image's claim, as nothing covered it.
 # Empty lists with known true are an answer. A name that is no task here is NoSuchTask.
+# x-mcp: true
 method ImageSettings(
   # Container name.
   task: string
@@ -1885,6 +1911,7 @@ method ImageSettings(
   removed: []RemovedSetting
 )
 
+# x-mcp: true
 method Tail(
   # Container name.
   task: string,
@@ -1911,6 +1938,7 @@ method Tail(
 # A task log's lines before a position, for a client scrolling up past what Tail sent. A page, not a
 # stream; the client asks again with the offset it got. A page fits one message as sent, escaped and
 # formatted: fewer lines than asked when they are long, and one line too long alone comes cut.
+# x-mcp: true
 method LogBefore(
   # Container name.
   task: string,
@@ -1938,6 +1966,7 @@ method LogBefore(
 
 # What a task's terminal session shows, read without attaching: for work in a terminal, which has
 # no log to follow. A snapshot, not a stream; a client asks again.
+# x-mcp: false the person's own terminal sessions
 method Screen(
   # Container name.
   task: string,
@@ -1963,6 +1992,7 @@ method Screen(
 # A terminal session's earlier output, from the recording porelod keeps of it, for scrolling past
 # the lines Screen gives. Output older than the recording's start, which is kept as records.kept_days
 # says, answers atStart true.
+# x-mcp: false the person's own terminal sessions
 method ScreenBefore(
   # Container name.
   task: string,
@@ -2006,6 +2036,7 @@ method ScreenBefore(
 #
 # A name already in /porelo/files is replaced, and the record says so. The task must be running. Nothing comes
 # back out of a task through this or any other method here.
+# x-mcp: false what a person hands into a task
 method HandIn(
   task: string,
   # A plain file name: not empty, at most 255 bytes, no '/', not starting with '.', no control characters.
@@ -2026,12 +2057,14 @@ method HandIn(
 )
 
 # Takes a handed-in file out of /porelo/files again. The task must be running.
+# x-mcp: false what a person hands into a task
 method TakeBack(task: string, name: string) -> (file: HandedFile)
 
 # Every hand-in, replacement and removal under a task's name, oldest first: of every run that carried the
 # name, told apart by 'run' - and also after the task is gone, since the record is kept in the state
 # directory. It names the files and never holds their content. It records what these methods did; a file
 # copied into a container by other means is not in it.
+# x-mcp: true
 method HandIns(task: string) -> (record: []HandIn)
 
 # A file goes only to a running task, and only a running task gives one back.
@@ -2135,8 +2168,10 @@ error NotTheTasksPush(head: string)
 # rejectOverOwnWork, pushWithoutOwnWork, or exceedsParent (a start through a task's endpoint asking more
 # than the starting task holds); 'detail' names the part that breaks it.
 error StartRuleBroken(rule: string, detail: string)
-# An act needs a right the task's start did not record; 'act' names what was tried.
-error RightMissing(right: string, act: string)
+# No method answers a missing right: no caller of this interface can lack one. A task meets it as the rule
+# "RightMissing: <right> (<act>)", <right> a value of Right, in the refusal of what it handed to its mailbox and
+# in its gate's log for a push; a method of its own endpoint that its rights lack answers
+# org.varlink.service.MethodNotFound.
 # A Start of an existing task named parts other than the ones its first start recorded.
 error RightsChanged()
 # A Start or CanStart named a place that could not be read; nothing was made. 'detail' is for a person.
@@ -2194,6 +2229,7 @@ type Usage (
 )
 
 # Reads current usage or the last retained record of a removed task, without network access.
+# x-mcp: true
 method Usage(task: string) -> (usage: Usage)
 
 # One tool call of a task's unattended run, in Porelo's own format: each agent maps its stream into it, and porelod
@@ -2314,10 +2350,12 @@ type RecordsFrom (
 # of them together), so a run of pages reads the record files once; a page whose reading is no longer kept reads
 # them again. A from whose record is then no longer stored answers RecordChanged; a from that is no RecordsFrom the
 # daemon gave answers InvalidParameter naming from.
+# x-mcp: false every task's command lines, a project's whole: the person's planner reads them
 method Records(project: string, since: string, from: ?RecordsFrom) -> (records: []TaskRecord, next: ?RecordsFrom)
 
 # The rest of one record's tool calls, page by page, in the record's order, for the record as Records answered it.
 # Each page fits one message; next is absent when this page holds the record's last call.
+# x-mcp: false every task's command lines, a project's whole: the person's planner reads them
 method RecordCalls(
   project: string,
   # The record's task, startedAt and updatedAt, as Records answered them; updatedAt absent where the record had none.
@@ -2367,6 +2405,7 @@ type Finding (
 # adapter looks up with none.
 # fileName names the file a yes writes or approves: "porelo.yml" for a new repository draft in 'default',
 # "project.yml" for an existing local project, or "" when no file is named.
+# x-mcp: false the person's own decision about a start or a project
 method FirstStart(checkout: string, proxy: ?[string]string) -> (outcome: string, found: []Finding, hosts: []string, marked: []string, file: string, fileName: string, project: string, hash: string, notes: []string, refusal: string)
 
 # A person's yes to the text a hash names: writes a new porelo.yml into the checkout, adds the checkout to
@@ -2375,6 +2414,7 @@ method FirstStart(checkout: string, proxy: ?[string]string) -> (outcome: string,
 # name reads whatever the checkout then holds. A
 # No has no call, and nothing is kept. The lookup FirstStart made answers the yes; one no longer kept is made
 # anew, through proxy as FirstStart takes it, and a text that changed with it is MOVED_ON.
+# x-mcp: false the person's own judgement
 method ConfirmFirstStart(checkout: string, hash: string, proxy: ?[string]string) -> (project: string)
 
 # A first start's yes cannot be taken. reason is NOT_A_CHECKOUT, NAME_TAKEN (the name is 'default', another
@@ -2507,6 +2547,7 @@ type Project (
 # host key on first use would be easier and is exactly what an interception looks like, so this
 # machine refuses to decide it - attended or not, because a timer that learns a host at three in
 # the morning has answered the question this refuses to answer.
+# x-mcp: false scans any host and port from the host's own network
 method HostKeys(
   # The host on its port, as a person types it: 'forge.example.org', and off port 22
   # 'forge.example.org:7999' or '[2001:db8::1]:7999' - ssh remembers a host on another port
@@ -2524,6 +2565,7 @@ method HostKeys(
 # The fingerprint comes from them, not from here. The host is asked again and the key is recorded
 # only if it still offers that one - which is what stops a key that arrived between being shown
 # and being confirmed from being the one written down.
+# x-mcp: false the person's own judgement
 method TrustHostKey(
   # As HostKeys takes it: with its port off port 22.
   host: string,
@@ -2553,6 +2595,7 @@ type Removal (
   what: string
 )
 
+# x-mcp: true
 method Projects() -> (projects: []Project)
 
 # Brings the file of a project Project.carried names, as a start would. For a person's act, never
@@ -2561,6 +2604,7 @@ method Projects() -> (projects: []Project)
 # A refusal is an answer: file is "", reason is the contract's word, and words say it to a person.
 # On success reason and words are "". A name this machine does not carry for this person is
 # reason "not-carried" and writes nothing.
+# x-mcp: false the person's own decision about a start or a project
 method TakeProject(project: string) -> (file: string, reason: string, words: string)
 
 # The same answer, again whenever it changes.
@@ -2578,6 +2622,7 @@ method TakeProject(project: string) -> (file: string, reason: string, words: str
 # push arriving at the gate, an environment prepared. The one place where latency costs
 # something real is Prompts, where a question expires; work waiting at the gate has no
 # deadline.
+# x-mcp: true
 method WatchProjects() -> (projects: []Project)
 
 # Measures one repository's distance from its upstream, now.
@@ -2590,6 +2635,7 @@ method WatchProjects() -> (projects: []Project)
 # It goes through the same measurement the timer uses and writes the same record, so a triggered
 # fetch and a timed one cannot disagree about how far behind a project is, and Projects shows
 # whichever ran last without being told.
+# x-mcp: false reaches the network or the person's forge with the person's credentials
 method SyncUpstream(
   # Project NAME, as Projects.name gives it.
   project: string,
@@ -2624,6 +2670,7 @@ method SyncUpstream(
 #
 # Newest first. Empty is an ordinary answer: a project nobody has backed up, or one backed up by a
 # Porelo older than the record.
+# x-mcp: false the machine's backups of every project's mirror are the person's
 method Backups(
   # Project NAME, as Projects.name gives it.
   project: string,
@@ -2655,6 +2702,7 @@ type Backup (
 # mirror - not on the upstream, not in a workspace, not in the bundle being restored - so
 # overwriting one destroys the only copy. Same outcome name as DeleteProject and Stop, for the same
 # situation.
+# x-mcp: false removes what cannot be had back
 method RestoreBackup(
   # Project NAME, as Projects.name gives it.
   project: string,
@@ -2686,6 +2734,7 @@ method RestoreBackup(
 # The bundle may be somebody's only copy of work that never reached the gate, so this takes the
 # path rather than an index - a list that shifted between reading it and acting on it would
 # otherwise delete a different backup than the one somebody chose.
+# x-mcp: false removes what cannot be had back
 method DeleteBackup(
   # Project NAME, as Projects.name gives it.
   project: string,
@@ -2711,11 +2760,13 @@ method DeleteBackup(
 # repository: <name>) like any other. Removing it, giving its
 # tasks egress or a credential, and choosing another upstream are refused, naming a project
 # repository as the way.
+# x-mcp: false which repositories every project claims is the person's to read
 method DefaultRepositories() -> (repositories: []DefaultRepository)
 
 # Adds a repository to 'default' by its address - named by hand or picked from a forge's list. The
 # same address again answers the entry already there. Refused with Failed for a name that is taken
 # or is not a repository name.
+# x-mcp: false the project's configuration is the person's
 method AddToDefault(
   # Where its approved work goes: an ssh or https address, or a path on this machine.
   upstream: string,
@@ -2726,6 +2777,7 @@ method AddToDefault(
 # Takes a repository out of 'default'. Its mirror, and anything waiting in it, stays. 'removed' is
 # false when 'default' has no repository of that name. This machine's deploy key for it is forgotten
 # and answered in 'keys', as RemoveProject answers them, so it is removed at the forge too.
+# x-mcp: false the project's configuration is the person's
 method RemoveFromDefault(
   # The repository's name in 'default'.
   name: string
@@ -2736,6 +2788,7 @@ method RemoveFromDefault(
 # checkout goes into that project; the repository stays in 'default' until the person takes it out
 # with LeaveDefault, which an interface offers beside this row. Empty when the organization names
 # none of them.
+# x-mcp: false the window's offer to take a repository out of default, on the person's word
 method NamedDefaultRepositories() -> (repositories: []NamedDefaultRepository)
 
 # Takes a repository out of 'default' on the person's word, through the same removal
@@ -2743,6 +2796,7 @@ method NamedDefaultRepositories() -> (repositories: []NamedDefaultRepository)
 # it, stays, and this machine's deploy key for it is forgotten and answered in 'keys'. Refused with
 # DefaultRepositoryInUse while a task of 'default' works on it, and with NoSuchDefaultRepository for
 # a name 'default' does not have; either way nothing is removed.
+# x-mcp: false the window's offer to take a repository out of default, on the person's word
 method LeaveDefault(
   # The repository's name in 'default', as NamedDefaultRepositories gives it.
   name: string
@@ -2802,6 +2856,7 @@ type DefaultRepository (
 # added from a checkout on this machine is read, as the person sees it; any other is refused with
 # NotProposable and stays UNASKED. A credential is named by its id alone: no reply carries a value.
 # An older daemon answers MethodNotFound, which a client reads as "this machine cannot propose".
+# x-mcp: false the project's configuration is the person's
 method ProposeProject(
   # The project: "default" alone.
   project: string,
@@ -2905,6 +2960,7 @@ type ProposedCredential (
 # and a .porelo.yml that is there is never written over (NotProposable, reason configured).
 # TOOLS_AND_DRAFT also answers the project.yml draft, which the person files themselves. Nothing is
 # recorded when any of it fails. Refused as ProposeProject is, and the repository then stays UNASKED.
+# x-mcp: false the person's own decision about a start or a project
 method TakeProposal(
   # The project: "default" alone.
   project: string,
@@ -2935,6 +2991,7 @@ error NotProposable(reason: string)
 # What holds work nobody has looked at - a push nobody reviewed, a stopped task's workspace, a
 # message waiting for a person - is in 'keeps', saying what in 'holds', and stays unless
 # includingWork. Without apply nothing is removed and 'removes' is what would go.
+# x-mcp: false removes what cannot be had back
 method Prune(
   # Remove what is found. Without it nothing is removed.
   apply: ?bool,
@@ -3070,6 +3127,7 @@ type ResolvedLimits (
 # It deletes, so it refuses first: a mirror may hold pushes nobody has reviewed and tasks may still
 # be up. A project of the organization and 'default' are refused with NotAllowed, and a name this
 # machine does not list with NoSuchProject.
+# x-mcp: false removes what cannot be had back
 method RemoveProject(
   name: string,
   # Says what would go, and removes nothing.
@@ -3109,6 +3167,7 @@ method RemoveProject(
 # What only a person's credentials can remove is answered, never attempted: the deploy keys at the forges
 # (keys) and this machine's line in each project's machine-signers (signer). Run twice, the second answer
 # has no items.
+# x-mcp: false removes what cannot be had back
 method Clear(
   # The project, or empty for the whole account.
   project: ?string,
@@ -3141,6 +3200,7 @@ type MachineKey (
 
 # Retired: always answers DeployKeyRefused. Git uses the person's own ssh key for an ssh address,
 # or their token stored as git.token.<host> for an https address.
+# x-mcp: false the project's configuration is the person's
 method DeployKey(
   project: string,
   # Default: the project's own.
@@ -3158,6 +3218,7 @@ method DeployKey(
 # 'mail.peers.<peer>' and 'repositories.<repository>' stand for each named one) to its keys; 'open' names
 # what Porelo does not check - the project's own names and each transport's settings. 'keys' describes
 # every key in 'sections', so a form a person new to Porelo can fill is built from Porelo's own words.
+# x-mcp: true
 method ProjectFileSchema() -> (sections: [string][]string, open: []string, keys: []ProjectFileKey)
 
 # One key a project file may hold, described.
@@ -3185,6 +3246,7 @@ type ProjectFileKey (
 # A section under 'mail.transports' is asked of that transport here, when it is installed and its describe
 # lists 'settings': what it refuses anywhere comes back in 'refused', what it warns of in 'warnings', each
 # beginning 'mail.transports.<scheme>: '. A transport that does not offer the check leaves its section open.
+# x-mcp: false tells which vault entries, destinations and transports exist, and runs a transport on the text
 method CheckProjectFile(text: string) -> (refused: []string, refusedHere: []string, warnings: []string)
 
 # The model a start on the project would run on for each provider this machine knows, when the start
@@ -3192,6 +3254,7 @@ method CheckProjectFile(text: string) -> (refused: []string, refusedHere: []stri
 # (providers.<provider>.model), else the agent's own default. So New work shows it before starting.
 # A file that does not read, or names a provider this machine does not know, is Failed, as Start
 # refuses it.
+# x-mcp: true
 method ProviderModels(
   # Project NAME, as Start takes it.
   project: string,
@@ -3316,6 +3379,7 @@ type EgressOutcome (
 # Not every set can be complete: os-packages-fedora reaches mirrors named by a mirrorlist, which
 # differ by region and by day, so hosts beyond the list arrive as clearance prompts. An interface
 # should not present it as equivalent to the others.
+# x-mcp: true
 method Sets() -> (
   sets: []EgressSet,
   # Directories searched, most specific first. Empty means none is installed.
@@ -3327,6 +3391,7 @@ method Sets() -> (
 # The agent's own hosts and its provider's are included, because what an operator wants to know
 # is what a task will reach and half of it is not in the project file. Which agent that is
 # follows the same rule a run does: the one named, the repository's, or the only one installed.
+# x-mcp: false chooses among the person's installed agents and their sign-ins to answer
 method Egress(
   # Project NAME, as Projects.name gives it.
   project: string,
@@ -3360,6 +3425,7 @@ method Egress(
 #
 # Nothing here applies to a task that is already running: a container's ruleset and resolver are
 # built when it starts.
+# x-mcp: false what a task may reach is the person's to decide
 method SetEgress(
   # Project NAME, as Projects.name gives it.
   project: string,
@@ -3430,6 +3496,7 @@ method SetEgress(
 # refused - the packet was dropped and nothing retries it - and turning it back on does not recall
 # anything waved through while it was off. The ruleset is loaded throughout, so this never opens a
 # destination by itself; what changes is whether a blocked connection produces a question.
+# x-mcp: false what a task may reach is the person's to decide
 method SetClearance(
   task: string,
   # prompt, allow, deny or off.
@@ -3450,6 +3517,7 @@ method SetClearance(
   detail: string
 )
 
+# x-mcp: false what a task may reach is the person's to decide
 method NarrowTask(
   # Task name, as List reports it.
   task: string,
@@ -3478,6 +3546,7 @@ method NarrowTask(
   detail: string
 )
 
+# x-mcp: false what a task may reach is the person's to decide
 method WidenTask(
   # Container name, from Task.name.
   task: string,
@@ -3543,6 +3612,7 @@ type ReachRow (
 #
 # With a task, every row is answered for that task: the names its run was granted and not taken
 # back, what its clearance mode does with an undeclared reach, and an authority it was handed.
+# x-mcp: true
 method Reach(
   # Container name, from Task.name. Default: this machine, for no task in particular. A task that
   # does not exist is NoSuchTask.
@@ -3561,6 +3631,7 @@ method Reach(
 # One subscription covers every task, including tasks started after the call - an interface
 # does not discover and connect to each task's own socket.
 # The reply is a Prompt: varlink wants the reply spelt out as a struct, so its fields are repeated here.
+# x-mcp: false the window's live feed of every task's refusals
 method Prompts() -> (
   # Container name, for routing the answer back to the right task.
   task: string,
@@ -3616,6 +3687,7 @@ method Prompts() -> (
 # A task that is not running has no watcher to tell, and that is refused rather than accepted
 # and dropped: an answer that goes nowhere leaves the operator believing they unblocked
 # something.
+# x-mcp: false the person's own judgement
 method Decide(
   # Container name, from Prompt.task.
   task: string,
@@ -3675,6 +3747,7 @@ type Destination (
 )
 
 # What the vault holds, without any of it.
+# x-mcp: false the vault is the person's own
 method Credentials() -> (
   # Where the vault file is.
   vault: string,
@@ -3737,6 +3810,7 @@ type Connection (
 # value itself is typed on the machine, and 'storeCommand' says exactly what to type. For source
 # FILE, ENVIRONMENT or AGENT there is nothing to type: the value is already somewhere, and this
 # records where.
+# x-mcp: false changes where a credential is sent
 method CredentialDeclare(
   # What the secret is called. For VAULT the entry name; for FILE the path; for ENVIRONMENT the
   # variable. For AGENT, one SHA256 fingerprint or public key line; omitted means all agent keys.
@@ -3801,6 +3875,7 @@ method CredentialDeclare(
 
 # Forgets a credential record. The secret is NOT removed: a key in ~/.ssh is the person's, and a
 # vault entry is removed with CredentialRemove, or 'porelo vault remove' at the machine.
+# x-mcp: false the vault is the person's own
 method CredentialForget(
   # The record's 'match', exactly as Connection gives it.
   match: string
@@ -3817,6 +3892,7 @@ method CredentialForget(
 #
 # Only an entry Credentials lists. One whose grant or client registration has to be ended at its
 # service first is refused as GRANTED: that is 'porelo vault remove' at the machine, which can ask.
+# x-mcp: false removes what cannot be had back
 method CredentialRemove(
   # The entry, as Credentials names it.
   name: string
@@ -3827,6 +3903,7 @@ method CredentialRemove(
 #
 # The value crosses this socket once, inbound: it is never logged, echoed or answered, and no
 # refusal carries any part of it.
+# x-mcp: false removes what cannot be had back
 method CredentialReplace(
   # The entry, as Credentials names it.
   name: string,
@@ -3879,6 +3956,7 @@ type SshKey (
 #
 # Deciding what is a private key means reading files, which is why this is answered by the machine
 # rather than by a client listing a home directory over ssh.
+# x-mcp: false the person's own SSH keys
 method SshKeys() -> (
   keys: []SshKey
 )
@@ -3886,6 +3964,7 @@ method SshKeys() -> (
 # Which credential a destination would use, and whether it would work - before anything is tried.
 #
 # The call a dialog makes before offering 'Approve', without touching the network.
+# x-mcp: false the vault is the person's own
 method CredentialCheck(
   # Where something would connect, such as a project repository's URL.
   url: string,
@@ -3917,6 +3996,7 @@ method CredentialCheck(
 #
 # It is the better first offer wherever an agent can log itself in, because nothing has to be
 # retyped - and the commonest typo when retyping is storing the guide's placeholder.
+# x-mcp: false the vault is the person's own
 method ImportCredential(
   # Which agent to import from. Omit when only one is installed.
   agent: ?string,
@@ -3957,6 +4037,7 @@ method ImportCredential(
 # The private half stays in this daemon's memory until one entry opens with it or five minutes have
 # passed; an ended key opens nothing and is dropped at the next call. A few live at once, a newer
 # one ending the oldest. Nothing is written.
+# x-mcp: false a vault entry carried to a host is the person's to send, never a task's
 method CredentialReceiver() -> (
   # READY, or VAULT_LOCKED: no key is made for a vault that could not store what it receives.
   outcome: string,
@@ -3976,6 +4057,7 @@ method CredentialReceiver() -> (
 # ImportCredential reads it and sealed under the name and kind that import would store it under, so
 # the host keeps it where its tasks look; this machine's vault is neither opened nor written, and a
 # shut one does not matter.
+# x-mcp: false a vault entry carried to a host is the person's to send, never a task's
 method SealCredential(
   # The receiving key, as CredentialReceiver answered it.
   key: string,
@@ -4024,10 +4106,12 @@ type ImportableCredential (
 # holds, or the one it answers when it is not brokered. Read from the agents' files, so a shut vault
 # does not matter; names only, never a value. Each agent is asked once per provider, so this is not
 # cheap.
+# x-mcp: false a vault entry carried to a host is the person's to send, never a task's
 method ImportableCredentials() -> (rows: []ImportableCredential)
 
 # Opens an entry SealCredential sealed to one of this daemon's live keys and stores it in this
 # machine's vault. The key it opened with ends.
+# x-mcp: false a vault entry carried to a host is the person's to send, never a task's
 method ReceiveCredential(
   # As SealCredential answered it.
   sealed: string,
@@ -4059,6 +4143,7 @@ method ReceiveCredential(
 #
 # Readable while the vault is locked: a screen has to show which devices can open a vault before
 # anything opens it. Nothing here is secret.
+# x-mcp: false the vault is the person's own
 method Keyslots() -> (slots: []Keyslot)
 
 type Keyslot (
@@ -4085,6 +4170,7 @@ type Keyslot (
 # The share arrives once, wraps the master key, and is discarded. It is never logged, never echoed
 # back and never written anywhere. What is left here is worth nothing without the device, and what
 # the device holds is worth nothing without this machine's vault file.
+# x-mcp: false the person's own judgement
 method EnrollDevice(
   # What to call the device in a list.
   name: string,
@@ -4104,6 +4190,7 @@ method EnrollDevice(
 #
 # Deleting one wrapped blob and nothing else: no re-keying, no other device disturbed, no
 # passphrase rotated.
+# x-mcp: false removes what cannot be had back
 method RevokeKeyslot(id: string) -> (
   # REVOKED, NO_SUCH_SLOT, LAST_WAY_IN, VAULT_LOCKED, VAULT_WITHOUT_KEYSLOTS or FAILED.
   outcome: string,
@@ -4118,6 +4205,7 @@ method RevokeKeyslot(id: string) -> (
 # the daemon's locked memory until lock or exit, and refuses minutes. The unwrapped master key
 # is not retained, since it would outlive every revocation.
 # An SSH share for a vault containing other slot kinds is refused with NotAHostVault.
+# x-mcp: false the person's own judgement
 method UnlockWithShare(
   # When supplied, must resolve to this daemon's vault.
   vault: ?string,
@@ -4143,6 +4231,7 @@ method UnlockWithShare(
 # Authorize, 'porelo vault authorize', or whoever answered. Raised once per credential until it is granted,
 # not once per refused start. Answering it is Authorize with 'credential'.
 # The reply is a AuthorizationNeeded: varlink wants the reply spelt out as a struct, so its fields are repeated here.
+# x-mcp: false the prompts waiting for the person's own answer
 method Authorizations() -> (
   # The vault entry that names the service; pass it to Authorize as 'name'.
   credential: string,
@@ -4167,15 +4256,18 @@ method Authorizations() -> (
 # token which never expires and nothing to renew it - GitHub's device flow for an OAuth app - is kept as it
 # is: "granted", with a detail saying it cannot be revoked from here. One that expires with nothing to renew
 # it is "refused", saying why.
+# x-mcp: false the person's own judgement
 method Authorize(
   # The vault entry of kind oauth-device or oauth-code that names the service.
   name: string
 ) -> (state: string, link: string, code: string, port: int, expiresIn: int, detail: string)
 
 # Every destination declared on this machine, the one in force for each name first.
+# x-mcp: false the vault is the person's own
 method Destinations() -> (destinations: []Destination)
 
 # One destination, as it is in force.
+# x-mcp: false the vault is the person's own
 method Destination(name: string) -> (destination: Destination)
 
 # Declares a destination in the user's own directory, taking the place of a packaged one of the same name.
@@ -4184,6 +4276,7 @@ method Destination(name: string) -> (destination: Destination)
 # back, or the refusal - a name that is not one, an upstream that is not https, no header. An upstream may
 # also be 'unix:<path>', an endpoint on this host, taken only for a socket directly in
 # $XDG_RUNTIME_DIR/porelo/mcp with no symbolic link on its path.
+# x-mcp: false changes where a credential is sent
 method WriteDestination(
   name: string,
   label: ?string,
@@ -4197,6 +4290,7 @@ method WriteDestination(
 
 # Removes the user's own declaration of a destination. A packaged one cannot be removed; if one of the same
 # name exists, it is in force again afterwards.
+# x-mcp: false the vault is the person's own
 method RemoveDestination(name: string) -> (removed: bool, file: string)
 
 # The destination as given is not one Porelo can use; the message says why.
@@ -4212,6 +4306,7 @@ error DestinationRefused(message: string)
 # starts as on a new machine.
 #
 # A running task that holds a token from the vault refuses it, force or not: stop the task first.
+# x-mcp: false removes what cannot be had back
 method VaultClear(
   # When supplied, must resolve to this daemon's vault.
   vault: ?string,
@@ -4236,9 +4331,13 @@ method VaultClear(
 # Paths resolve to the daemon's vault, whose wrapped key must still match the held share.
 # Every method requires SO_PEERCRED's uid to match this daemon's, including SSH connections.
 # Forget compares the vault location without requiring the encrypted file to exist.
+# x-mcp: false the vault is the person's own
 method KeepHostVaultShare(vault: string, share: string) -> ()
+# x-mcp: false the vault is the person's own
 method HostVaultShare(vault: string) -> (open: bool)
+# x-mcp: false hands out a secret
 method ReadHostVaultShare(vault: string) -> (share: string)
+# x-mcp: false the vault is the person's own
 method ForgetHostVaultShare(vault: string) -> (wasHeld: bool)
 
 # The offered share opens no slot; the vault has not been cleared or changed.
@@ -4318,6 +4417,7 @@ type HostIdentity (
 # Without replace, an identity already kept is replaced only by one with the same organization key,
 # the same host keys and every kept repository unchanged, which may add repositories; anything else
 # is HostIdentityExists and nothing changes. The window asks the person before replace.
+# x-mcp: false a host's keys are the person's to keep, read and replace
 method HostIdentityKeep(
   # The host, as its card names it.
   host: string,
@@ -4328,12 +4428,15 @@ method HostIdentityKeep(
 
 # The whole identity, private halves included, for the moment it is piped into the host's setup.
 # Refused with HostIdentityNotReadOnAHost by a host's own daemon, whose vault is not the person's.
+# x-mcp: false a host's keys are the person's to keep, read and replace
 method HostIdentityRead(host: string) -> (identity: HostIdentity)
 
 # The identity without any private field, for pinning a host's keys and showing what it carries.
+# x-mcp: false a host's keys are the person's to keep, read and replace
 method HostIdentityPublic(host: string) -> (identity: HostIdentity)
 
 # The hosts whose identity the vault keeps, sorted.
+# x-mcp: false a host's keys are the person's to keep, read and replace
 method HostIdentities() -> (hosts: []string)
 
 # The vault keeps no identity for this host.
@@ -4361,6 +4464,7 @@ error HostIdentityNotReadOnAHost()
 # Issuance and transfer hold the account's forge-token lock, including against the CLI token issuer.
 # No Git or issuer text, URL, credential or credential fragment is returned. Never offered through MCP:
 # releasing to central is a person's judgment. The window offers this action; its button is a client concern.
+# x-mcp: false releases approved work with the person's central credential
 method PushToCentral(project: string, repositories: ?[]string) -> (
   repository: ?string,
   stage: ?string,
@@ -4450,6 +4554,7 @@ type HostPullRequestRefusal (
 # refused, present only when a repository was refused, names each; the other repositories still answer.
 # A reply fits one message: when the rows do not, pullRequests and ended hold their first rows, paged says how
 # many there are, and PullRequestsPage gives the rest of this same reading. Absent when every row is here.
+# x-mcp: false spends the person's forge identity on reviews awaiting human judgement
 method PullRequests(project: string) -> (pullRequests: []HostPullRequest, ended: []HostPullRequest, refused: ?[]HostPullRequestRefusal, paged: ?PullRequestsPaged)
 
 # How much of a PullRequests reading or a WatchPullRequests snapshot there is when its reply holds only the
@@ -4467,6 +4572,7 @@ type PullRequestsPaged (
 # The rest of a PullRequests reading or a WatchPullRequests snapshot that did not fit its reply, page by page:
 # positions run through pullRequests and then ended, so putting the pages after the first reply gives each list
 # whole, in its order, every row once. Each page fits one message.
+# x-mcp: false spends the person's forge identity on reviews awaiting human judgement
 method PullRequestsPage(
   project: string,
   # PullRequests.paged.reading or WatchPullRequests.paged.reading.
@@ -4502,6 +4608,7 @@ error PullRequestsReadingGone(project: string, reading: string)
 # so a client still paging an older snapshot drops it for the newer.
 # None of PullRequests, PullRequestsPage and this method is offered to tasks through MCP: each spends or
 # hands out what the person's forge identity read.
+# x-mcp: false spends the person's forge identity on reviews awaiting human judgement
 method WatchPullRequests(project: string) -> (pullRequests: []HostPullRequest, ended: []HostPullRequest, refused: ?[]HostPullRequestRefusal, paged: ?PullRequestsPaged)
 
 # No usable person token exists under the exact entry written by the command on this host.
@@ -4626,6 +4733,7 @@ type DeliveredOrigin (
 # for review". Omitting it means the project's own repository - the one the project file belongs
 # to - which is the only default in this interface that is not Porelo picking between equals.
 # Project.repositories lists the names.
+# x-mcp: true
 method Pending(
   # Project NAME, as Projects.name gives it.
   project: string,
@@ -4644,6 +4752,7 @@ method Pending(
 )
 
 # What a pending push contains, so it can be judged before it is forwarded.
+# x-mcp: true
 method Review(
   project: string,
   upstream: ?string,
@@ -4715,6 +4824,7 @@ type ReviewPaged (
 # The rest of a Review that did not fit its reply, page by page, for the commit that Review answered. Pages of
 # files and commits are in Review's own order, so putting them together gives the list Review would have given
 # whole. Each page fits one message.
+# x-mcp: true
 method ReviewPage(
   project: string,
   upstream: ?string,
@@ -4754,6 +4864,7 @@ error ReviewTooLarge(name: string, bytes: int, limit: int, command: []string)
 # branch only when named. On the host's own forge approval opens or reuses a pull request with
 # the task's token, targeting the repository's default branch. If the API refuses, Failed says
 # the push happened and why the forge refused; the approval stays pending for a retry.
+# x-mcp: false the person's own judgement
 method Approve(
   project: string,
   upstream: ?string,
@@ -4783,13 +4894,17 @@ method Approve(
   forwarded: string,
   branch: string,
   # Address of the new or reused pull request on the host's forge; absent elsewhere.
-  pullRequest: ?string
+  pullRequest: ?string,
+  # The push went, but its end could not be kept for the task that pushed it: a sentence for a
+  # person, saying so. Absent when the end was kept or there was none to keep.
+  endUnkept: ?string
 )
 
 # Pending work as a git bundle, for a person who merges it on their own computer - signed with their own key -
 # and pushes it: what is on the pending ref and not on 'branch' in the mirror (the whole history when the mirror
 # has no such branch). Fetch it with 'git fetch <file> refs/porelo/incoming/<name>'. Refused as BundleTooLarge
 # above the limit, rather than sent: a reply is one message.
+# x-mcp: false the gate's work is the person's to move
 method PendingBundle(
   project: string,
   upstream: ?string,
@@ -4809,6 +4924,7 @@ method PendingBundle(
 # fetched with this machine's own credential. Not rejected, which it was not: it went, just not through here.
 # landed false changes nothing, and 'detail' says why: not on the branch yet, the upstream not reachable, no
 # upstream configured.
+# x-mcp: false the gate's work is the person's to move
 method Landed(
   project: string,
   upstream: ?string,
@@ -4817,7 +4933,14 @@ method Landed(
   name: string,
   # The upstream branch it was merged onto. Required.
   branch: string
-) -> (landed: bool, commit: string, detail: string)
+) -> (
+  landed: bool,
+  commit: string,
+  detail: string,
+  # It landed, but the push's end could not be kept for the task that pushed it: a sentence for a
+  # person, saying so. Absent when the end was kept, there was none to keep, or it did not land.
+  endUnkept: ?string
+)
 
 # The bundle is larger than a reply may be.
 error BundleTooLarge(bytes: int, limit: int)
@@ -4829,8 +4952,11 @@ error BundleTooLarge(bytes: int, limit: int)
 # mailbox here any more.
 # 'force' discards a push the upstream already has (PendingPush.alreadyUpstream); without it such a push is
 # refused with AlreadyUpstream and nothing is discarded.
+# 'endUnkept' says, as a sentence for a person, that the push was discarded but its end could not be kept
+# for the task that pushed it; absent when the end was kept or there was none to keep.
+# x-mcp: false the person's own judgement
 method Reject(project: string, upstream: ?string, repository: ?string, name: string, reason: ?string, force: ?bool)
-    -> (rejected: string, told: bool)
+    -> (rejected: string, told: bool, endUnkept: ?string)
 
 # Reject was asked to discard a push the upstream already has, and was not given 'force': nothing was discarded.
 error AlreadyUpstream(name: string)
@@ -4863,6 +4989,7 @@ error BranchExists(branch: string, at: string)
 # Opens a comment thread on lines of a waiting push, as the owner account. Kept with the push and bound to
 # the task container that pushed it, so a later task of the same name inherits no thread. Never offered
 # through MCP: a task answers in a thread through its mailbox.
+# x-mcp: false writes a review as the owner account; a task answers a thread through its mailbox
 method Comment(
   project: string,
   # Which repository of the project.
@@ -4892,6 +5019,7 @@ method Comment(
 )
 
 # Answers a thread of a waiting push, as the owner account; open or resolved, the thread keeps its state.
+# x-mcp: false writes a review as the owner account; a task answers a thread through its mailbox
 method Reply(
   project: string,
   repository: string,
@@ -4910,6 +5038,7 @@ method Reply(
 
 # Every comment and reply of a waiting push, as SARIF in Porelo's profile, one page at a time, the oldest
 # thread first. Each item names its producer by channel: the owner account, or a task.
+# x-mcp: false reads a review as the owner account; a task answers a thread through its mailbox
 method Comments(
   project: string,
   repository: string,
@@ -4925,6 +5054,7 @@ method Comments(
 
 # Sets a thread of a waiting push resolved, or open again with reopen. Only the thread's state changes: it
 # clears no finding, changes no approval and approves nothing.
+# x-mcp: false resolves a review's thread as the owner account
 method ResolveThread(
   project: string,
   repository: string,
@@ -4940,6 +5070,7 @@ method ResolveThread(
 
 # How much of a waiting push's review is still open, as the daemon counts it, for whoever decides the push.
 # Never offered through MCP. Refused only as NoSuchPush or MovedSinceReview.
+# x-mcp: false counts a review as the owner account
 method ReviewSummary(
   project: string,
   repository: string,
@@ -4972,6 +5103,7 @@ type ReviewRun (
 # Refused as PlaceUnreadable, UnknownForge, NoPullRequest, for a pull request address the forge does not
 # know as NoSuchPullRequest, and as HeadNotInGate for a pull request whose head the asking task's gate never
 # forwarded; pullRequest or ownPullRequest without task is org.varlink.service.InvalidParameter.
+# x-mcp: false what is open at a place, read for the person's planner
 method ReviewOpen(
   project: string,
   place: Place,
@@ -4986,6 +5118,11 @@ method ReviewOpen(
   # after one that carried none, APPROVED when Approve forwarded it, LANDED when Landed found it merged
   # elsewhere. On a pull request: OPEN, APPROVED (an approving review stands), MERGED, CLOSED (unmerged).
   decision: (OPEN, RETURNED, REJECTED, LANDED, APPROVED, MERGED, CLOSED),
+  # The task that rejected the push, by its name: set exactly when decision is RETURNED or REJECTED and a
+  # task holding the right reject made it, with decisionSince the time it did. Absent when the owner
+  # account rejected, and for every other decision. The event log's rejected entry names the same task
+  # in its detail.
+  rejectedBy: ?string,
   # The forwarded commit at the gate, the merge commit on a pull request; absent until one exists.
   mergedCommit: ?string,
   # The branch that commit went onto, at both places, such as "main"; absent with mergedCommit.
@@ -5047,8 +5184,9 @@ type HeldItem (
   direction: (outgoing, incoming),
   # Where it goes: for an outgoing item the place, for an incoming one the task's run.
   destination: string,
-  # What it does there: comment (opens a thread at a file's lines) or reply (answers a thread).
-  operation: (comment, reply),
+  # What it does there: comment (opens a thread at a file's lines), reply (answers a thread) or resolve (marks a
+  # thread resolved; only a task's run sends one).
+  operation: (comment, reply, resolve),
   # A comment's file, repository-relative; absent for a reply.
   path: ?string,
   # A comment's side: old (the base's file) or new (the reviewed commit's); absent for a reply.
@@ -5056,16 +5194,17 @@ type HeldItem (
   # A comment's first and last line, inclusive, counted from 1; absent for a reply.
   startLine: ?int,
   endLine: ?int,
-  # The thread a reply answers, by its id at the place; absent for a comment.
+  # The thread a reply answers or a resolve marks, by its id at the place; absent for a comment.
   thread: ?string,
   # A comment's proposed replacement of its lines, exact and unescaped; absent when it has none.
   suggestion: ?string,
   # The commit the run pinned, in full; the item is written against it.
   commit: string,
-  # The item's exact text, unescaped: what is released is exactly this.
-  text: string,
-  # SHA-256 of the item's content (operation, path, side, lines, thread, text, suggestion) in lowercase hex, as
-  # Porelo computes it; DecideItem names the digest it was shown, and a client never computes it.
+  # The item's exact text, unescaped: what is released is exactly this; absent for a resolve, which says nothing.
+  text: ?string,
+  # SHA-256 of the item's content (operation, path, side, lines, thread, text, suggestion; for a resolve the place,
+  # the pinned commit and the thread) in lowercase hex, as Porelo computes it; DecideItem names the digest it was
+  # shown, and a client never computes it.
   digest: string,
   # The name of the forge account that wrote an incoming item, such as "octocat", which a client shows as
   # "forge account octocat"; absent for an outgoing one.
@@ -5081,6 +5220,7 @@ type HeldItem (
 
 # The undecided held items, oldest first, in pages. Never offered through MCP: the decision is the owner
 # account's. A cursor is refused as CursorRefused.
+# x-mcp: false held review items are the owner account's to decide
 method HeldItems(
   # A task's name; absent lists every task's items on this machine.
   task: ?string,
@@ -5098,6 +5238,7 @@ method HeldItems(
 # Decides one held item, if its content is still the one shown. release and refuse are for an outgoing item,
 # pass and dismiss for an incoming one; another is org.varlink.service.InvalidParameter. A refusal carries no
 # words for the task. The reply is empty; the item leaves HeldItems and Task.held. Never offered through MCP.
+# x-mcp: false held review items are the owner account's to decide
 method DecideItem(
   task: string,
   id: string,
@@ -5133,6 +5274,7 @@ type ForgeInstance (
 
 # The forge instances this machine knows, in the order they were added, and the names of the forge adapters
 # installed. Never offered through MCP.
+# x-mcp: false how a forge's comments reach a run is the person's choice
 method Forges() -> (forges: []ForgeInstance, adapters: []string)
 
 # Adds a forge instance, or changes the adapter or comment reading of one. comments absent means EXTENDED,
@@ -5140,6 +5282,7 @@ method Forges() -> (forges: []ForgeInstance, adapters: []string)
 # one of Forges' adapters, whose names are the forge kinds they serve. A host that is not a DNS name is
 # org.varlink.service.InvalidParameter. The reply is empty. Never offered through MCP: how a forge's words
 # reach a run is the owner account's choice.
+# x-mcp: false how a forge's comments reach a run is the person's choice
 method ForgeSet(host: string, adapter: string, comments: ?(EXTENDED, TRUSTED)) -> ()
 
 # No forge adapter of that name is installed; nothing was changed.
@@ -5183,6 +5326,7 @@ error IdReused()
 
 # Tries one SSH identity without saving a credential or publishing work. Uses the existing mirror;
 # it never initializes or fetches one. source is AGENT (fingerprint or public key id) or FILE (path).
+# x-mcp: false reaches a forge with the person's SSH key
 method CredentialTryPush(
   project: string,
   repository: ?string,
@@ -5221,6 +5365,7 @@ error PushRefused(
 # Missing, unreadable, unsafe, oversized or malformed data is cannot-say, never an empty history.
 # Historical judgements are returned unchanged; signatures are not verified again.
 # These are pre-receive judgements, not proof that the forge updated its refs.
+# x-mcp: true
 method Arrivals(project: string, repository: string) -> (
   # read or cannot-say. An armed repository without commits still has an armed row.
   state: string,
@@ -5342,6 +5487,7 @@ type ShadowedAgent (
 )
 
 # Agent binaries installed on this machine.
+# x-mcp: false the person's installed agents and their sign-ins
 method Agents() -> (
   # One entry per agent NAME, never two: they are held by name, so a name appears once whatever
   # is installed. A second binary claiming a name already taken does not appear here at all - it
@@ -5365,6 +5511,7 @@ method Agents() -> (
 # Cheap in the ordinary case. It consults the installed agents only when the vault holds a name
 # that is not a provider's - the one situation where the key below can be an agent's name - so a
 # vault written by a current Porelo costs nothing extra.
+# x-mcp: false the vault is the person's own
 method Providers() -> (
   providers: []Provider,
   # Whether the vault could be read at all. False means locked or undecryptable, and then
@@ -5415,6 +5562,7 @@ type Provider (
 # one read at a time, and within that minute its last answer or failure is given again. The agent's
 # static list makes no request, needs no vault unlock, and is neither kept nor limited per minute;
 # it is available with a shut vault. Read-only: it starts no task and changes no file.
+# x-mcp: false reaches the network or the person's forge with the person's credentials
 method Models(
   # The provider, by the name Providers reports.
   provider: string,
@@ -5465,6 +5613,7 @@ error ModelsFailed(provider: string, message: string)
 # thing without which nothing leaves, and it is always installed.
 #
 # As fresh as the machine's last index refresh, which needs root and is not done here.
+# x-mcp: false the machine's own paths, packages and probes are the person's to read
 method Installable() -> (packages: []Installable)
 
 type Installable (
@@ -5488,6 +5637,7 @@ type Installable (
 # checkout's directory and the person's home. Nothing is looked up (no Resolve, so nothing reaches the network), and
 # nothing is written, in the checkout or on the machine. A checkout of 'default' or of a placed project is asked alike.
 # A checkout in no git repository, or not named by its absolute path, is FirstStartRefused with NOT_A_CHECKOUT.
+# x-mcp: false runs every adapter over a checkout of the person's
 method Ecosystems(
   # The checkout to ask about, by its absolute path. Without it only the adapters are listed.
   checkout: ?string
@@ -5570,6 +5720,7 @@ type AgentSignIn (
 
 # Each installed agent's sign-in state, read from the vault once. A batch start asks this once and
 # signs in each agent that is NOT_SIGNED_IN, one after another, before it starts its tasks.
+# x-mcp: false the vault is the person's own
 method AgentSignIns() -> (signIns: []AgentSignIn)
 
 # Starts an agent's own login on this machine, at most one per agent: one already running - started
@@ -5586,6 +5737,7 @@ method AgentSignIns() -> (signIns: []AgentSignIn)
 # Returns once the container runs, which the first time includes building the login image; a second
 # call while one is being prepared returns once that one runs. A login nobody finishes within 30
 # minutes is stopped and removed.
+# x-mcp: false signs an agent in on the host's own network with the real credential
 method AgentSignInStart(
   # The agent, as Agents names it.
   agent: string,
@@ -5607,6 +5759,7 @@ method AgentSignInStart(
 # Waits until an agent's sign-in ends, at most 30 minutes, and answers whether the vault holds its
 # credential then - read from the vault, never from how the login exited. At once when none runs:
 # after one that ended here, with its result; otherwise with what the vault holds.
+# x-mcp: false signs an agent in on the host's own network with the real credential
 method AgentSignInWait(agent: string) -> (
   # Whether the vault holds the agent's credential now.
   stored: bool,
@@ -5630,6 +5783,7 @@ type MessageMember (
 
 # This machine's message key, for an interface that writes its machine-signers line into a project itself.
 # It signs no message any more: a task signs with its own certified key, and nothing reads machine-signers.
+# x-mcp: false the machine's message signing key, made on its first ask, is the person's
 method MessageKey() -> (principal: string, key: string, line: string, fingerprint: string)
 
 # ---------------------------------------------------------------------------- messages
@@ -5640,6 +5794,7 @@ method MessageKey() -> (principal: string, key: string, line: string, fingerprin
 # Two things at once because they are read together: the project says who may be addressed, and
 # the mailbox says whether anything currently goes there. An interface that showed only the first
 # would show a peer as available while every message to it waits.
+# x-mcp: true
 method Peers(
   # Container name of the task.
   task: string,
@@ -5679,6 +5834,7 @@ type TalkPeer (
 # Live only: it says what happens from the moment a client listens, and replays nothing. What is
 # already waiting for a person when a client starts is Held.
 # The reply is a TalkEvent: varlink wants the reply spelt out as a struct, so its fields are repeated here.
+# x-mcp: false the window's live feed of a conversation
 method Talk() -> (
   # Container name of the task whose mailbox this is about.
   task: string,
@@ -5713,6 +5869,7 @@ method Talk() -> (
 # cannot disagree. Without what the messages say: reading one is a person's deliberate act, through
 # ReadHeld. held and refused-by-filter wait for a decision; refused-by-person and unchecked are
 # listed because they are still there, and neither can be sent.
+# x-mcp: true
 method Held(
   # Container name of one task, or absent for every task on this machine.
   task: ?string
@@ -5754,6 +5911,7 @@ type HeldMessage (
 # reason to skip the check. What differs is the role, which says a person wrote it.
 #
 # NoSuchPeer when the project has no conversation and no peer of that name - nothing would carry it.
+# x-mcp: false a person's own words, written with the person's role
 method Say(
   # Container name of the task.
   task: string,
@@ -5775,6 +5933,7 @@ method Say(
 # Puts a person's own words straight into a task's inbox, where its agent reads - to the task itself, where
 # Say speaks for a person to a peer. It carries role ROLE_USER and metadata from "person"; it never leaves the
 # machine, so it is neither signed nor filtered.
+# x-mcp: false a person's own words, written with the person's role
 method Tell(
   # Container name of the task.
   task: string,
@@ -5791,6 +5950,7 @@ method Tell(
 # Looked up exactly as Release looks it up. A refused message holds what was refused, secrets
 # included, and is shown to the person asking - at the operator's word, so a person can still decide
 # to deliver it. It is never in the stream or the record, which stay without content.
+# x-mcp: false hands out a refused message's text
 method ReadHeld(
   # Container name of the task.
   task: string,
@@ -5838,6 +5998,7 @@ method ReadHeld(
 # filter's accepted directory, and the record says it went despite the filter. An external peer's
 # own filter checks it again. What a person refused for good, and what the filter could not check,
 # is never sent.
+# x-mcp: false the person's own judgement
 method Release(
   # Container name of the task.
   task: string,
@@ -5888,6 +6049,7 @@ type NotDeliverable (
 #
 # A mode is not set here: the project's project.yml sets it once, for every task, and a 'mode' given
 # here fails with a message that says where.
+# x-mcp: false holding or releasing a peer's messages is the person's
 method Moderate(
   # Ignored: a decision is the project's, not one task's. Accepted so an older client still works.
   task: ?string,
@@ -5908,6 +6070,7 @@ method Moderate(
 # naming a project repository as the way, before any transport runs. A project a host carries for this
 # person and not taken here yet is taken first, as its first start would, so its room opens before any task;
 # a refused take answers ConversationRefused with code 69 and its words.
+# x-mcp: false who is in a conversation is the person's
 method SetUpMessages(project: string) -> (messages: ProjectMessages)
 
 # Lets a person into a project's conversation with an account made for them, or gives it a new password
@@ -5917,6 +6080,7 @@ method SetUpMessages(project: string) -> (messages: ProjectMessages)
 # and loopback ("true" when the homeserver is this machine's loopback) with port - a client elsewhere then
 # forwards that port (ssh -L port:127.0.0.1:port) before its Matrix client reaches the homeserver. 'shown'
 # is what a terminal prints.
+# x-mcp: false who is in a conversation is the person's
 method JoinMessages(
   project: string,
   # Whom the account is for, as MessageMembers lists them.
@@ -5935,6 +6099,7 @@ method JoinMessages(
 # Lets another machine into a project's conversation on this machine's server. Answered once: the
 # admission and its secrets are in this reply and nowhere else, never kept here. Refused for an offline
 # project, whose messages never leave this machine, and when the transport does not offer it.
+# x-mcp: false who is in a conversation is the person's
 method AdmitMachine(
   project: string,
   # The machine let in, by the name its transport goes by.
@@ -5950,6 +6115,7 @@ method AdmitMachine(
 # Takes another machine off this machine's conversation server, asked through one project: out of
 # every project's conversation there, and its registration refused. Refused for an offline project,
 # which admits nobody.
+# x-mcp: false who is in a conversation is the person's
 method DismissMachine(
   project: string,
   machine: string
@@ -5959,6 +6125,7 @@ method DismissMachine(
 )
 
 # Who has joined a project's conversation, by the name join was given.
+# x-mcp: false who is in a conversation is the person's
 method MessageMembers(project: string) -> (members: []MessageMember)
 
 # Reads the current room through its transport without setting it up or changing membership.
@@ -5969,6 +6136,7 @@ method MessageMembers(project: string) -> (members: []MessageMember)
 # A transport's answer may hold 16 MiB, a reply one message of 4 MiB: when the members do not fit,
 # members holds the first of them, paged says how many there are, and RoomMembersPage gives the rest of
 # this same reading. Absent when every member is here.
+# x-mcp: false a host-credentialed query that returns unfiltered server names for the operator
 method RoomMembers(project: string) -> (room: string, members: []RoomMember, paged: ?RoomMembersPaged)
 
 # How much of a RoomMembers reading there is when its reply holds only the first members.
@@ -5985,6 +6153,7 @@ type RoomMembersPaged (
 # The rest of a RoomMembers reading that did not fit its reply, page by page: putting the pages after the
 # first reply gives the members whole, in their order, each once. Each page fits one message. Never
 # offered through a task's MCP socket, as RoomMembers is not.
+# x-mcp: false a host-credentialed query that returns unfiltered server names for the operator
 method RoomMembersPage(
   project: string,
   # RoomMembers.paged.reading.
@@ -6025,6 +6194,7 @@ error NoRoom(project: string)
 error HomeserverUnreachable(project: string, transport: string, message: string, code: int)
 
 # Removes a joined person; user is empty when nothing remained, why explains a kept account.
+# x-mcp: false who is in a conversation is the person's
 method RemoveMessageMember(project: string, person: string) -> (user: string, kept: bool, why: string)
 
 # The person has joined already; reset gives them a new password.
@@ -6057,6 +6227,7 @@ error NoSuchPeer(peer: string, detail: string)
 #
 # It runs external programs to find out, so it takes a moment and is not something to poll. It is
 # still a read: nothing here changes anything.
+# x-mcp: false the machine's own paths, packages and probes are the person's to read
 method Doctor() -> (
   probes: []Probe,
   # False when anything is MISSING. Not a summary a client should re-derive: this is the same rule
@@ -6081,6 +6252,7 @@ type Probe (
   action: string
 )
 
+# x-mcp: false the machine's identity, made on its first ask, is the person's
 method Node() -> (
   # Stable across restarts, and unique to this node. Random, and derived from nothing: it says
   # only whether two connections lead to the same place.
@@ -6095,6 +6267,7 @@ method Node() -> (
 # The daemon holds the vault's reads and is therefore not dumpable: its entries under /proc/<pid>
 # belong to root, and its own user can no longer read where it runs from. This is how a client
 # learns which binary answers on the socket, for instance after an update.
+# x-mcp: false the machine's own paths, packages and probes are the person's to read
 method Process() -> (
   # Its process id; under systemd, the unit's MainPID.
   pid: int,
@@ -6110,6 +6283,7 @@ method Process() -> (
 # A dry run changes nothing and lists the same changes the run makes, except one the file system
 # refuses only when asked, which the run then lists in left. Refused with Failed when a directory
 # cannot be looked through.
+# x-mcp: false a person decides this; nothing calls it for them
 method Tighten(dryRun: bool) -> (
   # How many paths were found loose.
   found: int,
@@ -6139,6 +6313,7 @@ type LeftLoose (
 # porelod read it at its start. A client passes line on unchanged as --limits to a Porelo program it
 # starts, and applies the factors to its own limits; what it starts before it can ask uses the factors
 # it last read from this machine, or all four at 1.0. Read once per connection.
+# x-mcp: true
 method Limits() -> (
   # The limits line, all four in the order services, machines, polling, retries, each with at least
   # one digit after its dot: services=1.0,machines=1.0,polling=1.0,retries=1.0
@@ -6151,6 +6326,7 @@ method Limits() -> (
 
 # The person's own decisions about how long something holds, from the account's config.yml as porelod
 # read it at its start: whole days, each 1 to 3650, never multiplied by a time factor.
+# x-mcp: true
 method AccountSettings() -> (
   # How long the person's certification of a task holds (task.certificate_days, 7).
   certificateDays: int,
@@ -6164,25 +6340,22 @@ method AccountSettings() -> (
   keptDays: int
 )
 
-# Which methods an MCP client may be offered as tools, as porelo-mcp asks for them. Each name is a
-# method's name without the interface, as a tool is named.
+# The methods an MCP client is never offered as tools, whatever their marker says: Porelo's own
+# hand-kept list, named one by one and never guessed from a name. Each name is a method's name
+# without the interface, as a tool is named.
 #
-# reading, never and judgement are Porelo's, named one by one and never guessed from a name.
-# writing is the person's own list in $XDG_CONFIG_HOME/porelo/mcp-writing, one method per line
-# with '#' starting a comment, less any name in never or reading and any this interface lacks.
-# A client offers reading and writing; it refuses never itself as well, so a fault on one side
-# alone opens nothing. A judgement method is offered only from the list, and the client says so.
-method McpMethods() -> (
-  reading: []string,
-  writing: []string,
-  never: []string,
-  judgement: []string
-)
+# Which methods a client may offer comes from each method's marker in this description, the last
+# comment line above it: true, or false and a reason. A client offers only methods marked true and
+# refuses every one never names as well, so a fault on one side alone opens nothing; no method never
+# names is marked true.
+# x-mcp: true
+method McpMethods() -> (never: []string)
 
 # The account's event log: every security-relevant event of this node - an approval or rejection,
 # a clearance at run time, a hand-in, a credential a start gave, a project file applied, every task
 # stopped at once - one line each, hash-chained, and each line's hash anchored in the user's systemd
 # journal, which the account can append to but not rewrite. A read: nothing here changes anything.
+# x-mcp: true
 method Events(
   # Only events at or after this instant, as 2026-10-28T03:00:00Z. Omitted, all.
   since: ?string
@@ -6195,6 +6368,8 @@ type Event (
   # approved, rejected, clearance, hand-in, credential, project-applied, stopped-all, arrived or
   # started; unreadable for a line that cannot be read, its other fields "". started is a task another
   # task started through its MCP endpoint: task is the one started, detail names the parent.
+  # rejected by a task holding the right reject: task is the one whose push was discarded, detail
+  # names the task that rejected it.
   kind: string,
   # The project, or "".
   project: string,
@@ -6211,6 +6386,7 @@ type Event (
 # true only when the chain is whole, every line is anchored but those ahead of the first anchored one
 # and older than the oldest hash the journal still holds of this log, and the journal holds no hash
 # the log has lost. A log with lines and no hash in the journal does not hold.
+# x-mcp: false checking the event log against the journal is the person's audit
 method VerifyEvents() -> (
   holds: bool,
   lines: int,

@@ -23,8 +23,8 @@ class CheckCommandTest {
 
     // Harm: a person told the tools work when the daemon gives others, or none.
     @Test
-    void againstTheDaemonItPrintsItsVersionAndExactlyTheMethodsItDescribes() throws Exception {
-        String description = StandInDaemon.tasks1();
+    void againstTheDaemonItPrintsItsVersionAndExactlyTheMethodsMarkedForAgents() throws Exception {
+        String description = StandInDaemon.tasks1Meant("Stop", "Watch");
         try (var daemon = new StandInDaemon(directory, description, Map.of())) {
             Ran ran = run(Map.of(), "--check", "--daemon-socket", daemon.socket().toString());
 
@@ -35,8 +35,10 @@ class CheckCommandTest {
                     .contains("9.9.9-standin")
                     .contains(daemon.socket().toString());
             assertThat(lines)
-                    .as("one line per method, as described")
-                    .containsExactlyElementsOf(ContractToolsTest.methodsDeclaredIn(description));
+                    .as("one line per method marked for agents, in the described order")
+                    .containsExactlyElementsOf(StandInDaemon.meantIn(description))
+                    .contains("List", "Stop", "Watch")
+                    .doesNotContain("Panic", "Approve");
         }
     }
 

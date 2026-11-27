@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -164,7 +165,7 @@ public final class Main {
         }
         final List<Tool> tools;
         try {
-            tools = toolsOf(daemon.describe(INTERFACE));
+            tools = toolsOf(daemon.describe(INTERFACE), err);
         } catch (VarlinkException | IllegalArgumentException ex) {
             err.println(
                     "porelo-mcp: "
@@ -260,7 +261,7 @@ public final class Main {
         }
         final List<Tool> tools;
         try {
-            tools = toolsOf(daemon.describe(INTERFACE));
+            tools = toolsOf(daemon.describe(INTERFACE), err);
         } catch (VarlinkException ex) {
             err.println(
                     "porelo-mcp: GetInterfaceDescription of "
@@ -309,7 +310,7 @@ public final class Main {
         final SocketDaemon daemon = new SocketDaemon(socket);
         final List<Tool> tools;
         try {
-            tools = toolsOf(daemon.describe(INTERFACE));
+            tools = toolsOf(daemon.describe(INTERFACE), err);
         } catch (VarlinkException | IllegalArgumentException ex) {
             err.println(
                     "porelo-mcp: the daemon at "
@@ -318,9 +319,9 @@ public final class Main {
                             + ex.getMessage());
             return NO_DAEMON;
         }
-        McpMethods sets;
+        List<Tool> offered;
         try {
-            sets = McpMethods.of(daemon);
+            offered = McpMethods.of(daemon).offered(tools, err);
         } catch (VarlinkException ex) {
             if (ex.getErrorName() == null) {
                 err.println(
@@ -333,19 +334,10 @@ public final class Main {
             err.println(
                     "porelo-mcp: no tools offered: the daemon answered McpMethods with "
                             + ex.getErrorName());
-            sets = McpMethods.NONE;
+            offered = List.of();
         } catch (IllegalArgumentException ex) {
             err.println("porelo-mcp: no tools offered: " + ex.getMessage());
-            sets = McpMethods.NONE;
-        }
-        final List<Tool> offered = sets.offered(tools);
-        for (final Tool tool : offered) {
-            if (sets.judgement().contains(tool.name())) {
-                err.println(
-                        "porelo-mcp: your client may call "
-                                + tool.name()
-                                + ", which stands for your own judgement, on your behalf");
-            }
+            offered = List.of();
         }
         err.flush();
         final McpSession session = new McpSession(offered, daemon, version());
@@ -400,15 +392,37 @@ public final class Main {
 
     /**
      * The tools of a description, which must be of {@value #INTERFACE}: another interface's methods
-     * are not the daemon's tools, whatever they are called.
+     * are not the daemon's tools, whatever they are called. Only a method marked {@code x-mcp:
+     * true} is a tool, its marker line left out of its description; one with no marker or a
+     * malformed one is no tool either, and is named on standard error.
      */
-    static List<Tool> toolsOf(String description) {
+    static List<Tool> toolsOf(String description, PrintStream err) {
         final VarlinkInterface described = VarlinkIdl.parse(description);
         if (!described.name().equals(INTERFACE)) {
             throw new IllegalArgumentException(
                     "it describes " + described.name() + ", not " + INTERFACE);
         }
-        return Tool.of(described);
+        final List<Tool> tools = new ArrayList<>();
+        for (final Tool tool : Tool.of(described)) {
+            final AgentMarker marker = AgentMarker.of(tool.description());
+            switch (marker.kind()) {
+                case MEANT ->
+                        tools.add(
+                                new Tool(
+                                        tool.name(),
+                                        tool.method(),
+                                        marker.description(),
+                                        tool.inputSchema(),
+                                        tool.outputSchema()));
+                case NOT_MEANT -> {
+                    // Not meant for agents, by the daemon's own word: nothing to say.
+                }
+                case MISSING, MALFORMED ->
+                        err.println("porelo-mcp: " + tool.name() + " is no tool: " + marker.why());
+            }
+        }
+        err.flush();
+        return List.copyOf(tools);
     }
 
     /** Reads {@code --name value} pairs, each of the given names exactly once. */

@@ -57,9 +57,13 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 
 ## Tools
 
-- Each method the interface description offers is one tool, named by the method's name without its interface, such as
-  `List` for `org.fuin.porelo.Tasks1.List`. Its input and output schemas come from the Varlink types, its description
-  from the method's comment. The tools are read once per process; when the allowed set changes, `porelod` restarts it.
+- Each method the interface description offers and marks for agents is one tool, named by the method's name without its
+  interface, such as `List` for `org.fuin.porelo.Tasks1.List`. Its input and output schemas come from the Varlink
+  types, its description from the method's comment without the marker.
+- The marker is the last line of the comment directly above `method Name(`: exactly `# x-mcp: true`, or
+  `# x-mcp: false <reason>` with a reason of 1 to 200 characters; the word stands nowhere else in that comment. A method
+  marked false is no tool and is left out without a word; one with no marker or a malformed one is no tool either and
+  is named on standard error, so a fault in the contract opens nothing. The tools are read once per process; when the allowed set changes, `porelod` restarts it.
 - The arguments of a call go to the daemon unchanged; `porelo-mcp` does not check them against the schema, so a
   parameter the daemon refuses comes back as the daemon's own `org.varlink.service.InvalidParameter`.
 - A Varlink error reaches the agent as an MCP tool result with `isError: true`. Its structured content is
@@ -122,18 +126,12 @@ client may use either.
 
 - `porelo-mcp stdio [--daemon-socket <path>] [--limits <line>]` serves a person's own MCP client on the host over
   standard input and output, on the person's own daemon socket, by default `$XDG_RUNTIME_DIR/porelo/porelod.sock`.
-- It offers by default only the reading methods, named one by one, never guessed from a method's name. A writing method
-  is offered only when the person names it in a list of their own local Porelo settings, never in a project file.
-- A destructive method - such as stopping every task, clearing the vault, or panic - is never offered over stdio,
-  whatever that list says.
-- A method that stands for the person's own judgement, such as approving work or answering a clearance prompt, may be
-  on that list. When one is offered, `porelo-mcp` says at start, on standard error, which of them the client may call.
-- The sets come from the daemon at run time, by `org.fuin.porelo.Tasks1.McpMethods() -> (reading: []string, writing:
-  []string, never: []string, judgement: []string)`: `reading`, `never` and `judgement` are porelo's own, named per
-  method; `writing` is the person's own list minus `never`. Each name is a method's name without the interface, as a
-  tool is named. `porelo-mcp` offers `reading` and `writing`, and refuses
-  every name in `never` itself as well, so a fault on one side alone opens nothing. A daemon that does not answer
-  `McpMethods` gets no tools offered.
+- It offers the methods the daemon marks for agents (see [Tools](#tools)), and never one of porelo's hand-kept
+  never-set - such as stopping every task, clearing the vault, or panic - whatever its marker says.
+- The never-set comes from the daemon at run time, by `org.fuin.porelo.Tasks1.McpMethods() -> (never: []string)`, each
+  name a method's name without the interface, as a tool is named. A method marked for agents that the set names is no
+  tool and is named on standard error as a contradiction, so a fault on one side alone opens nothing. A daemon that does
+  not answer `McpMethods`, or answers no list of names, gets no tools offered.
 
 ### Streams
 
