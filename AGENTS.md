@@ -82,7 +82,8 @@ an RPM package of its own.
   Over stdio it offers only the sets the daemon names, and refuses the daemon's never-set once more itself, so a fault
   on one side alone opens nothing.
 - **It never parses the `porelo` command line's output and never reads Porelo's files**; it speaks only Varlink to the
-  daemon.
+  daemon. The one file it reads is the person's planner's address file, to call the planner as the window does
+  ([doc/binding.md](doc/binding.md#the-persons-planner)).
 - **No secret value ever leaves through it.** The contract gives none, and a tool that would carry one is a fault of the
   contract, raised with porelo.
 - **It never listens on TCP.** For a task it serves MCP over HTTP on a Unix socket of mode `0600`, with a bearer token

@@ -157,6 +157,27 @@ client may use either.
   that call as it starts. The bound of 64 and one stream per id hold for the whole socket. A client whose `Accept`
   takes no `text/event-stream` (its media range in any case, without `q=0`) gets one answer, as without a token.
 
+## The person's planner
+
+`porelo-mcp` calls the person's running planner as the window does, by the planner's own contract (its
+`planner.yaml`); nothing of it passes through `porelod`.
+
+- **The address.** It reads `porelo-planner/planner.json` in the account's runtime directory (`XDG_RUNTIME_DIR`, or
+  `/run/user/<uid>` when unset) under the window's checks: every directory above the runtime directory is root's or
+  this account's and, when others may write it, sticky; the runtime directory, `porelo-planner` and `planner.json` are
+  this account's, no symbolic link, and closed to group and others; the file is at most 4096 bytes of JSON with a
+  `port` of 1 to 65535 and a `token`. It never takes the planner's lock: a file a dead planner left is found out by its
+  proof. A missing file means no planner runs; anything else is refused by name.
+- **The token** is held in memory for one call, read anew from the file each time, and never sent, logged or written.
+- **The proof.** Before every request it asks `POST /proof` with 32 random bytes and sends nothing more unless the
+  answer is the one HMAC of the token over the port and those bytes: a planner that ended leaves its port to whoever
+  binds it next. A refused proof or nobody listening reads the file once more, then fails.
+- **Each request** goes to `127.0.0.1` on HTTP/1.1, through no proxy and following no redirect, signed in
+  `Porelo-Signature` (form `porelo-planner-request-1`); an answer is taken only when its `Porelo-Answer` holds and it is
+  at most 16 MiB. A `401` reads the file once more and sends the request again only to a planner started anew under
+  another port or token. A read may take 30 seconds and a write 2 minutes, the proof 60 seconds, each times the
+  services factor.
+
 ## Checking it
 
 - `porelo-mcp --check [--daemon-socket <path>] [--limits <line>]` says whether it reaches the daemon, with the version
