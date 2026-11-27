@@ -301,8 +301,7 @@ class StreamsTest {
                 StdioCommandTest.sets(
                         List.of("List", "Tail", "Watch"), List.of(), List.of(), List.of());
         methods.put("McpMethods", (parameters, replies) -> replies.last(sets));
-        return new StandInDaemon(
-                directory, StandInDaemon.tasks1() + StdioCommandTest.MCP_METHODS, methods);
+        return new StandInDaemon(directory, StandInDaemon.tasks1(), methods);
     }
 
     private static String call(int id, String tool, Map<String, Object> arguments, String token) {

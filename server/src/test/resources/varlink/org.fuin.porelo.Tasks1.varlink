@@ -222,7 +222,15 @@ type TalkEvent (
   # The peer it was going to or came from, or "".
   peer: string,
   # Why, for the events that have a why. "" otherwise.
-  detail: string
+  detail: string,
+  # This machine's own verdict on who sent it: "unsigned" when no certified key of a task signed it - one
+  # that arrived without a believed signature, or one its own task had no key to sign - "unverified" when
+  # its key is believed and nothing here verified the sending task's project, "" otherwise. Read from what
+  # the pass checked, never from the message; a sender that leaves a mark out is not certified by that.
+  # Absent from a daemon before this field.
+  # An open set: today "unsigned", "unverified" or "". A reader shows a value it does not know as given, never as
+  # trusted.
+  mark: ?string
 )
 
 # The project has no conversation: no peer is reached through a transport's own ('<scheme>:').
@@ -301,16 +309,24 @@ error Failed(message: string)
 # not the same: a task blocked on a question nobody saw and a task grinding through a build are
 # both running: true, and that difference is the one that costs an afternoon.
 type Activity (
+  # The agent declared completion through its own task socket. Its container is stopped, or its
+  # observed activity is IDLE. No waiting reason is added. A later start clears the declaration.
+  DONE,
   # Its container is not up. Stopped, finished or dead - all three are gone.
   DEAD,
   # Waiting for a person to answer something, said by the thing that asked rather than guessed
   # from how long it has been quiet. waitingFor says what about.
   WAITING,
-  # Producing output.
+  # Producing output; for an attached agent that declares its rest, its screen shows it not at rest.
   WORKING,
   # Up and quiet, with no recorded question for a person. This does not mean "waiting for a message";
   # silence cannot say that. inboxWaiting counts what is waiting, for a client to interpret.
   IDLE,
+  # Up and attached, and its agent's screen shows it at rest at its prompt, by the agent's own
+  # declaration of what rest looks like, on two looks at least 1.5 s apart. Not IDLE, which is
+  # inferred from a quiet log. An agent that declares no rest stays UNKNOWN; a question to a person
+  # on its screen is never read as rest.
+  AT_REST,
   # Up, and its agent's run has ended - finished, or stopped by an error its agent read from its own
   # output. agentEnded says how. Neither working nor idle: nothing will happen any more on its own.
   ENDED,
@@ -329,13 +345,65 @@ type AgentEnded (
   # "" when finished; else the text as the agent or its provider gave it.
   error: string,
   # Whose the error is: "provider" or "agent". A provider's is named as the provider's, so a person
-  # looks there - credits, key, limits - and not at Porelo.
+  # looks there - credits, key, limits - and not at Porelo. "porelo" when Porelo ended the run at its
+  # time limit.
   source: string,
   # The provider's HTTP status, when the provider refused: 402, 401, 429, 403.
   status: ?int,
   # Changed files and commits in the workspace that never reached the gate: work an agent wrote
   # before it ended and did not push.
-  unpushed: int
+  unpushed: int,
+  # What the agent answered: its last message, as the record its definition declares as the last
+  # message gives it, "" when it declares none or wrote none. A long answer keeps its end, at most
+  # 16 KiB of its UTF-8 and starting at a whole character, since a work order asks for its last line.
+  answer: string,
+  # Whether the answer was longer and only its end is kept.
+  answerCut: bool,
+  # Whether Porelo ended the run because its time limit passed (Start's minutes): its container was
+  # stopped as a stop does, its log, workspace and result kept. finished is false and error names
+  # the minutes.
+  limit: bool,
+  # What was taken of the file the task hands back, once its end took it. Absent for a task started
+  # without Start's result, and while nothing was taken.
+  result: ?TaskResult
+)
+
+# How the work ended. FAILED is derived, never declared by a task.
+type EndOutcome (DONE, BLOCKED, FAILED)
+
+type TaskEnded (
+  outcome: EndOutcome,
+  # The task's reason, or agentEnded.error for a derived FAILED.
+  why: string,
+  # When the task declared it, or agentEnded.at for a derived FAILED, ISO-8601.
+  at: string
+)
+
+# Something a task reported back to whoever started it: plain text, numbered per task.
+type TaskReport (
+  # The task's own sequence, 1, 2, ...; never reused, also after the task is removed.
+  seq: int,
+  # One line the caller's brief asks for; Porelo passes it through unread and never checks it.
+  kind: string,
+  # At most 65,536 characters; it may hold line breaks.
+  text: string,
+  # When the host kept it, ISO-8601 UTC.
+  at: string
+)
+
+# What the host took of the one file a task hands back, named by Start's result.
+type TaskResult (
+  # The file's name, as Start was given it.
+  name: string,
+  # "handed": taken whole, its text answered by Result. "missing": no file of that name was there.
+  # "too-large": larger than 1 MiB (1048576 bytes). "unreadable": a link, a directory or anything but
+  # a regular file, one the host may not read, or one that is not UTF-8 text or holds a control
+  # character other than tab, line feed and carriage return. A client shows a word it does not know
+  # by itself; this list may grow.
+  state: string,
+  # What was read; for "too-large" the size the file's attributes give. 0 for "missing", and for
+  # "unreadable" where nothing could be read.
+  bytes: int
 )
 
 # How a person is meant to be involved in a task.
@@ -364,8 +432,9 @@ type StartAction (
   # It exists and is stopped. Start brings it back with the workspace, the branch and the
   # uncommitted changes it already has.
   RESUME,
-  # It is already running. Start refuses rather than starting a second one; Attach is what
-  # somebody wants.
+  # It is already running: its container is up and its agent's run still goes on, or the run has
+  # ended in a task that is not UNATTENDED and the start gave no prompt. Start refuses rather than
+  # starting a second one; Attach is what somebody wants.
   RUNNING,
   # It would be resumed, but the gate token it has to come back holding is in a vault that is
   # locked. The per-task face of StartOutcome's VAULT_LOCKED, and for the same reason: the one
@@ -381,7 +450,11 @@ type StartAction (
   PREDATES_RESTART,
   # Something not specific to this task is in the way - project file, agent, provider or
   # credential. 'startDetail' carries the StartOutcome value naming which.
-  NOT_READY
+  NOT_READY,
+  # Its container was up and its agent's run had ended. Start ran the agent again in it, continuing
+  # its session: with the prompt given or, for an UNATTENDED task given none, with Porelo's line to
+  # read its inbox. Only on Start's reply, never as a task's startAction.
+  RERUN
 )
 
 # One task on this machine, running or not.
@@ -394,6 +467,19 @@ type ScreenState (WAITING, NOT_WAITING, UNDECLARED, UNSEEN)
 
 # Whether a finished run's last message was a question. See Task.asked.
 type Asked (ASKED, DID_NOT_ASK, CANNOT_SAY)
+
+# Where a task's reviewed work landed.
+type Landed (
+  # The branch it was forwarded to, such as porelo/shell.
+  branch: string,
+  # The ref a reading task fetches it by, refs/porelo/landed/<task>/<branch>.
+  ref: string,
+  # What a reading task's clone holds it as after git fetch, origin/landed/<task>/<branch>: the name
+  # its order gives, copied unchanged.
+  remote: string,
+  # The commit forwarded there.
+  commit: string
+)
 
 type Task (
   # Container name, which is what every other method takes as its task parameter.
@@ -416,8 +502,9 @@ type Task (
   commit: string,
   # offline, guarded or online - or "" when nothing recorded it.
   securityClass: string,
-  # The container runtime's own words, such as "Up 4 minutes" or "Exited (143) 2 seconds ago".
-  # Free text meant for a person; do not parse it. Use running for the decision.
+  # "done" when activity is DONE; otherwise the container runtime's own words, such as
+  # "Up 4 minutes" or "Exited (143) 2 seconds ago". Use activity for the work and running for the
+  # container; a running container can hold completed work. Other free text is not parsed.
   state: string,
   # Whether the runtime says it is up.
   running: bool,
@@ -429,13 +516,28 @@ type Task (
   # The model provider its agent was brokered to, by the name Providers reports. "" when it was
   # brokered to none, or when the task was started by a Porelo that did not record it.
   provider: string,
+  # The model its agent runs on, as its start settled it: the start's own, else the repository's
+  # porelo.yml's for its provider, else project.yml's. "" for the agent's own default. A task
+  # brought back keeps it.
+  model: string,
+  # What a person is shown for the model, as the file that named it gives it. "" when it gives
+  # none, and for a model the start named.
+  modelLabel: string,
+  # Where the model came from: "start", "repository", "project", or "agent" when nothing named one
+  # and the agent runs on its own default. A task started before it was recorded reads "start"
+  # where it has a model and "agent" where it has none. "" when nothing recorded the task.
+  modelFrom: string,
+  # The reasoning effort its agent was started with, as Start took it: one of the agent's efforts.
+  # Absent when the start named none, and the agent runs on its own. A task brought back keeps it.
+  effort: ?string,
   # How somebody is meant to be involved: SHELL, AGENT or UNATTENDED, spelled as Mode spells
   # them. A string rather than the Mode type because it has a fourth state the type does not: ""
   # for a task started before this field existed, where nothing recorded one and inventing an
   # answer would be worse than admitting there is none.
   mode: string,
-  # What an unattended task was asked to do. Kept after it has finished, because "what was this
-  # asked to do" is a question people have about a task that is over. "" for the other modes.
+  # What an unattended task was asked to do, or the first turn an attended task was started with.
+  # Kept after it has finished, because "what was this asked to do" is a question people have
+  # about a task that is over. "" for a shell, and for an attended task started without one.
   prompt: string,
   # Ref its work goes to, such as refs/porelo/incoming/shell. "" when it has no gate.
   branch: string,
@@ -444,6 +546,12 @@ type Task (
   # task's approval goes by default in a project with a branch block. porelo/<task> for a task
   # started before it was recorded; "" when it has no gate.
   forgeBranch: string,
+  # The time limit in minutes its last unattended run was given (Start's minutes, default 30). 0 for an
+  # attended session, which has none, and for a task whose run predates this field.
+  minutes: int,
+  # Where its reviewed work landed, one entry per branch, readable by a task started with readLanded naming
+  # it. [] while its work waits at the gate, and for a task that never landed anything.
+  landed: []Landed,
   # Whether its commits are signed by a key of its own, certified at its start by a person the
   # project's access file admits, and judged at its gate when they arrive. false for a task whose
   # starter's agent held no such key, and for every task started before this field existed.
@@ -451,11 +559,17 @@ type Task (
   # When its current certificate ends, ISO-8601 in UTC, renewed by 'porelo task certify'. "" when it
   # has none, or for a task started before this field existed.
   certifiedUntil: string,
-  # When the current state began, ISO-8601: a running task since it started, a stopped one since
+  # Whether the file of its project was verified: false where nothing verified it (commit is ""),
+  # true for the project default, which has no file to verify. With certified it is the task's
+  # mark, shown wherever the task is: certified false is "unsigned", verified false is
+  # "unverified". Absent from a daemon before this field, which is never read as true.
+  verified: ?bool,
+  # When the container's current state began, ISO-8601: a running task since it started, a stopped one since
   # it exited. "" when the runtime could not say - a container that was created and never started
   # has no honest answer. This is what "idle for forty minutes" is arithmetic on; state is not.
   since: string,
-  # What the work is doing, beside state rather than instead of it.
+  # What the work is doing. A recorded done declaration applies only to stopped or IDLE work;
+  # WORKING, WAITING, AT_REST, UNKNOWN and ENDED keep their meaning. The declaration stays until a start.
   activity: Activity,
   # Last modification time of task.log, as an ISO-8601 instant; "" without a readable log.
   # Ask Tail(last: 1) for the last line when showing it. This timestamp alone does not change Watch.
@@ -467,7 +581,24 @@ type Task (
   # stopped with its run (activity DEAD). Absent while it runs, and for an agent that does not read
   # its own end.
   agentEnded: ?AgentEnded,
-  # What it is waiting to be told, when activity is WAITING. "" otherwise.
+  # The task's declaration, else FAILED when agentEnded.finished is false, else absent.
+  # A declaration from before outcomes reads as DONE with why "" and the mark's modification time.
+  # This does not change activity: only a declared DONE can give stopped or IDLE work activity DONE.
+  ended: ?TaskEnded,
+  # What was taken of the file it hands back, the same as agentEnded.result, and also for a task
+  # whose agent did not end on its own: after Done, a stop or a prompt run. Absent for a task started
+  # without Start's result, and while nothing was taken.
+  result: ?TaskResult,
+  # The sequence number of the task's last report, 0 before its first; it changes when a report
+  # arrives, so Watch sends the row again. Reports answers the reports themselves.
+  reports: int,
+  # The kind of workspace Porelo recorded for the task, so a reader derives nothing: own (its own
+  # branch and a gate), foreign (another task's push or pull request, frozen and read only), readOnly
+  # (one repository under /workspace/ read only, no gate), allRepositories (every repository read
+  # only, no gate) or none (an empty directory, no gate).
+  workspace: (own, foreign, readOnly, allRepositories, none),
+  # What it is waiting to be told: a clearance question, or review while its work is on the
+  # gate's waiting list. A passed online push supplies no review reason. "" for a stopped task.
   waitingFor: string,
   # What this task does with a blocked connection: "prompt", "allow", "deny" or "off" - the value
   # Start was given. "" when nothing recorded it, which is every task started before this field
@@ -485,13 +616,19 @@ type Task (
   # interface and the command line disagree about what a thing is called. Absent and empty are
   # deliberately the same state.
   label: string,
-  # Whether this task's own work is waiting at the gate. 1 when its ref is waiting for review, 0
-  # otherwise - and 0 for an online project, where nothing is ever reviewed, which is not a
-  # smaller number but a question the class does not have.
+  # The key Start's callerKey gave this task, as given; "" when its start was given none. The
+  # caller's own and opaque to porelo: never shown as a caption, never changed by Label, kept by a
+  # resume and through a restart of the caller, the daemon and the machine, and carried by a task
+  # whose start failed once its container was made.
+  callerKey: string,
+  # Whether this task's own work is on the gate's waiting list, using its recorded class.
+  # 1 when its recorded ref waits for review, 0 otherwise. An online task's ordinary push passes
+  # on at once. Rescued refs remain in the gate's queue; a name suffix alone does not link a task.
   #
   # Answered here rather than left to a join, because there is no join to make: 'name' is a
-  # CONTAINER name (porelo-<project>-<task>-<run>), PendingPush.name is a TASK name, and several
-  # containers over time share one ref. Anything lined up from the two would be right for at most
+  # CONTAINER name (porelo-<project>_<task>, or porelo_<task> in project porelo, for a new task,
+  # the older forms for one made before),
+  # PendingPush.name is a TASK name, and several containers over time share one ref. Anything lined up from the two would be right for at most
   # one of them and silently wrong for the rest.
   waiting: int,
   # Name within the project, which is what Start takes. 'name' is the container it produced.
@@ -500,6 +637,14 @@ type Task (
   # the two are related only by a rule Porelo owns and may change - it changed in this release. ""
   # for a container from before this field existed, where nothing recorded one.
   task: string,
+  # The same name within the project, under the name the rows of other clients read; "" as for task.
+  short: string,
+  # The name the task's start was given by the person or the task that started it; "" when the
+  # start took its name from the repository, numbered it, or was made before this field existed.
+  named: string,
+  # What a client shows for the task: named, else short, else the container name. Never what a
+  # method takes - that is name - and two tasks of two projects can show the same one.
+  display: string,
   # What Start would do to this task, without doing it.
   startAction: StartAction,
   # Which refusal, when startAction is one: the StartOutcome value for NOT_READY, the task a
@@ -512,9 +657,9 @@ type Task (
   # What this task is doing that takes minutes and has no other visible sign, such as "building".
   # "" when it is in none.
   #
-  # Here rather than only in Start's stream, because a Start given 'now' returns at once and a
-  # stream tied to the call that started it dies with that call. A window opened a minute later, or
-  # a second machine watching the same daemon, would otherwise see a task with nothing behind it.
+  # Here rather than only in Start's stream, because a stream is seen only by the call that started
+  # it. A window opened a minute later, or a second machine watching the same daemon, would otherwise
+  # see a task with nothing behind it.
   # The output itself is read with Tail.
   phase: string,
   # Whether the agent's own screen shows it waiting for a person - DERIVED from a rule the agent's
@@ -578,7 +723,49 @@ type Task (
   # build protocol, the task's launch stopped before the helper that follows them, or that helper ended while the
   # task runs. "" while it follows them, and when buildReader is "". What goes wrong while it follows - a
   # rate limit, a refused credential, the vault shut - is each Build's detail instead.
-  buildProblem: string
+  buildProblem: string,
+  # Set when this start follows no builds because the host's configured vault entry is absent.
+  # The sentence remains in buildProblem; afterStore is "restart", even once the entry is stored.
+  buildsCredential: ?MissingCredential,
+  # The rights the task's start recorded, written out: a start that named none shows the default set.
+  rights: []Right,
+  # The tasks whose landed work it reads, as its start recorded them; [] for none.
+  readLanded: []string,
+  # The account its start recorded for a pull request; author for a start that named none.
+  writeAs: (author, review),
+  # Whether it has the project's services, as its start recorded it.
+  projectServices: bool,
+  # Where the task's current or last run works, as Start's place took it. A start that named none
+  # works at the task's own gate push, which is then given here. Absent for a task without a gate.
+  place: ?Place,
+  # How many of the task's items, over its runs and places, wait for the owner account's decision. Absent
+  # while the task's hold journal cannot be read; the daemon's log and `porelo doctor` name it.
+  held: ?int
+)
+
+# What a task may do at its place and through its own endpoint: the actions push, reply, openThreads and
+# resolveThreads, the endpoint rights start, stop, done and report, and the one judgment, reject.
+type Right (push, reply, openThreads, resolveThreads, start, stop, done, report, reject)
+
+# Where a run works. Exactly one field is set; a Place with none or several is refused as
+# org.varlink.service.InvalidParameter.
+type Place (
+  # A push at this machine's gate.
+  gatePush: ?GatePush,
+  # A pull request by its https address, such as "https://github.com/owner/repo/pull/12": no user, query or
+  # fragment, at most 2048 ASCII characters, otherwise org.varlink.service.InvalidParameter. Its host names a
+  # forge instance this machine knows, otherwise UnknownForge.
+  pullRequest: ?string,
+  # The task's own pull request, the one its pushes opened.
+  ownPullRequest: ?bool
+)
+
+# A push at the gate. Its threads follow the task's container and the push's name, whatever its head.
+type GatePush (
+  # The project's repository; absent for the task's own.
+  repository: ?string,
+  # The push's name, which is its task's name (PendingPush.name).
+  name: string
 )
 
 # The build of one commit the task pushed, as Porelo handed it into the task: build-<first 12 of commit>.txt in
@@ -595,7 +782,22 @@ type Build (
   since: string,
   # Why "unknown" - a rate limit, a credential the forge refused, the vault shut, no build for that commit, no
   # verdict within the deadline - or what more the forge said; empty otherwise.
-  detail: string
+  detail: string,
+  # Each run of a workflow for the commit, with its own state, at every answer of the reader - also while queued or
+  # running, one line each on a tile. Empty when the reader names none. At most 50.
+  runs: []BuildRun
+)
+
+# One run of a workflow for a commit.
+type BuildRun (
+  # As the forge spells it, one line of printable text.
+  name: string,
+  # What became of it, lower case, or its state while it is not finished: "queued" | "in_progress" | ...
+  result: string,
+  # What started it, lower case as the forge spells it: "push", "pull_request", ...; at most 64 code points.
+  event: ?string,
+  # The forge's run id, one printable line of at most 64 code points; absent when the reader names none.
+  id: ?string
 )
 
 # One job of a build.
@@ -608,7 +810,17 @@ type BuildJob (
   result: string,
   # Its log's name in /porelo/files, the log's last 64 KiB: build-<first 12 of commit>-<n>.log, n counting from 1 in
   # this list; empty when no log of it was delivered.
-  log: string
+  log: string,
+  # The id of one of this build's runs; absent when the reader names none or an unknown run.
+  run: ?string,
+  # For a failed job, at most 50 failed tests as the runner names them, each one printable line of at most
+  # 200 code points. Absent when the reader names none.
+  failedTests: ?[]string,
+  # The forge's HTTPS job page, at most 2048 ASCII characters without spaces or user information; absent when
+  # the reader gives none of that form. Build status prints a page only on the repository upstream's host;
+  # it groups jobs under their run's trigger and id, lists unassigned jobs apart, and prints a failed job's
+  # tests instead of its log when tests are named.
+  url: ?string
 )
 
 # One file handed to a running task, as the record holds it.
@@ -689,6 +901,41 @@ type Log (
 # shows them as what they are, never as tasks: removing one removes what is in it.
 method List() -> (tasks: []Task, unrecognized: []string)
 
+# The task's own declaration of how its work ended, carried only by a task socket whose project's
+# mcp.methods includes Done. task must be that socket's task, never even a child or another project.
+# A call over the person's socket, or naming anybody else, is NotItsOwn. outcome defaults to DONE.
+# why is the one free text accepted: at most 1024 UTF-8 bytes, one line, no control characters,
+# refused rather than trimmed or cut. BLOCKED requires a non-blank why; DONE without why stores "".
+# It reaches only the task's reader, never another agent's prompt. Task sockets without Logs or Tail
+# receive no ended in List or Watch. The daemon stores outcome, why and its time in its private
+# durable task record, outside the mailbox mount. A declared DONE gives stopped or IDLE work
+# activity DONE and state "done"; BLOCKED leaves activity as observed. Work that resumes output is WORKING
+# again without losing the declaration; ENDED is unchanged. A later start clears the declaration.
+# This replaces no completion message to the room, and neither stops nor removes the container.
+method Done(task: string, outcome: ?(DONE, BLOCKED), why: ?string) -> ()
+
+# The task reports back to whoever started it: plain text and a one-line kind, kept with the task's
+# records and numbered in the task's own sequence. On the task socket only, when the project's
+# limits.reports is above 0 and its mcp.methods includes Report; past the bound, NotAllowed names it.
+# task must be that socket's task, else NotItsOwn. Porelo passes kind through unread and never checks it.
+method Report(task: string, kind: string, text: string) -> (seq: int)
+
+# The reports after `after` (all when absent), oldest first, at most 1 MiB; `more` when some were
+# left out. Kept as long as the task's records (records.kept_days), a removed task's included. Porelo
+# keeps nothing about who read what: a reader keeps the last seq it took. last is the task's last
+# sequence number.
+method Reports(task: string, after: ?int) -> (reports: []TaskReport, last: int, more: bool)
+
+# The file a task hands back, as the host took it, read from this machine's files alone: also after
+# its container is gone and after the task was removed, until the next start of its name, which
+# forgets it. The host takes the file at the task's end: at Done, at the end of a prompt run, when a
+# listing finds its agent ended or its container stopped, and at its removal. A file handed back once
+# is kept as it was; another state is taken again at the next end. content is the file's UTF-8 text,
+# only when state is "handed". Before anything was taken this answers state "missing" with bytes 0.
+# NoResultNamed for a task started without Start's result; NoSuchTask for a name no task holds and
+# nothing was kept for.
+method Result(task: string) -> (name: string, state: string, bytes: int, content: ?string)
+
 # The same answer, again whenever it changes.
 #
 # Called without "more" this answers once, exactly as List does, so a client that cannot
@@ -717,19 +964,23 @@ type StartStep (
   # What it waits on, such as "the room's homeserver"; "" when it waits on nothing outside Porelo.
   waitingOn: string,
   # FAILED only: the dependency's last error line, at most 300 characters; "" otherwise.
-  cause: string
+  cause: string,
+  # The task's container, on every step once it exists (HELPERS, AGENT); absent before. A client
+  # that stops reading Start at AGENT STARTED follows the task by it: the run goes on without it.
+  container: ?string
 )
 
 # Starts a task: creates one that is not there, or brings back one that is stopped.
 #
 # One verb, because the caller cannot know which case they are in - and pressing is not how
 # somebody should find out. That is what startAction on the listing is for. A task that is already
-# running is refused rather than started twice.
+# running is refused rather than started twice. One whose container is up but whose agent's run has
+# ended is run again (action RERUN, answered only when the agent ran).
 #
 # With "more" it streams lines as they happen; steps: true adds step-only replies. An interface should show
 # them: building an image takes minutes, and showing nothing for that long is indistinguishable
-# from having hung. With "now" it returns as soon as the task exists and the build goes on without
-# it; the task is in List and Watch immediately with its phase set, and Tail reads the output.
+# from having hung. Start answers when its start has ended, "now" given or not; meanwhile the task is
+# in List and Watch with its phase set, and Tail reads the output.
 #
 # The task outlives this call and this connection either way. Closing the socket mid-build does not
 # cancel it; List shows it afterwards.
@@ -737,6 +988,10 @@ method Start(
   # Task name within the project. Omitted, the repository's name, or the next free one (my-first-2), never an
   # existing task's.
   task: ?string,
+  # Optional container spelling: [a-z][a-z0-9-]*, at most 16 characters, no underscore or porelo- prefix.
+  # Recorded at creation, alongside the project's short spelling; an existing task keeps its name.
+  # Container creation currently retains the legacy name.
+  short: ?string,
   # Project NAME, as Projects.name gives it. REQUIRED - there is no default directory any more.
   project: ?string,
   # Agent to run, by the name Agents reports. Default: the agent the project file names for the
@@ -749,6 +1004,13 @@ method Start(
   provider: ?string,
   # Overrides the stored credential kind for this run.
   credentialType: ?string,
+  # Waits on this agent's running sign-in when its selected model credential is missing.
+  # The wait has its own 30-minute limit, independent of minutes. Afterwards the vault is
+  # re-checked for exactly the credential this start needs. A sign-in for another provider,
+  # or one that stored nothing, leaves SignInNeeded; a locked vault answers VaultLocked.
+  # Missing other credentials (forge, builds, other grants) never cause this wait.
+  # Omitted or false refuses immediately. Not offered through a task's MCP start.
+  waitForSignIn: ?bool,
   # Lifetime of the gate token. Default: 8.
   tokenHours: ?int,
   # Upstream to gate against. Default: the project's own.
@@ -785,6 +1047,50 @@ method Start(
   # Runs with no workspace and no git gate: the agent gets an empty directory and can commit
   # nowhere.
   noGate: ?bool,
+  # Gives the task every repository of the project to read, the project's own among them, instead
+  # of one to work on: each at its main as this machine takes it, under /workspace/<repository>/,
+  # read only and without .git, and never what tasks pushed for review. No gate and no push target;
+  # its end asks nothing about work: without rm it is stopped and kept, with its Result, until it is
+  # removed; with rm it is removed. Its agent, image and egress are the
+  # project's own repository's, which is the task's 'repository'. A repository that cannot be read
+  # is named among the output lines and left out; none readable refuses the start (exitCode 69).
+  # Refused with exitCode 64 beside repository, branch, from, noGate or upstream. Unnamed, the task
+  # is named "all", or the next free one. Not offered through a task's MCP start. An existing task
+  # is brought back only as the kind it was made: allRepositories for a task on one repository, or
+  # repository or noGate for one that reads them all, is refused with exitCode 64. A prompt run
+  # ends it the same way, whatever its exit.
+  allRepositories: ?bool,
+  # Gives the task its one repository to read instead of to work on: that repository alone, at its
+  # main as this machine takes it, under /workspace/<repository>/, read only and without .git, and
+  # never what tasks pushed for review. Its agent, image and egress are that repository's, as for a
+  # task that works on it; 'repository' names it and is required as it is without readOnly. No gate
+  # and no push target; its end asks nothing about work: without rm it is stopped and kept, with
+  # its Result, until it is removed; with rm it is removed. The repository not readable here
+  # refuses the start (exitCode 69). Refused with exitCode 64 beside allRepositories, branch, from,
+  # noGate or upstream ("--read-only works on one repository read only and with no gate, so it
+  # takes no <options>"). An existing task is brought back only as the kind it was made: readOnly
+  # for a task made otherwise, or allRepositories or noGate for one made readOnly, is refused with
+  # exitCode 64. Not offered through a task's MCP start.
+  readOnly: ?bool,
+  # The name of the one file the task hands back at its end: a file name, no directory, at most 255
+  # bytes of UTF-8, no control character, never "." or "..". The task finds /run/porelo/result/
+  # writable, and is told the name in its guide. At its end the host takes the file from there, at
+  # most 1 MiB of UTF-8 text, and keeps it on this machine until the next start of the name; Result
+  # answers it, and Task.result and AgentEnded.result say what was taken. A name that is no file's
+  # is refused with exitCode 64 before anything is made. A task brought back keeps the name it was
+  # made with: another is refused with exitCode 64.
+  result: ?string,
+  # Files the task is given to read, file name to UTF-8 text, such as an issue as its planner holds it
+  # now. Each name as 'result' takes one: a file name, no directory, at most 255 bytes of UTF-8, no
+  # control character, never "." or "..". At most 16 files, each at most 1 MiB of UTF-8, and all of
+  # them together, written as JSON, under the 4 MiB one varlink message may carry. Otherwise refused
+  # with exitCode 64 before anything is made ("--given: <why>"), in dryRun too. The host keeps them
+  # where only its account reads them and mounts them read only at /run/porelo/given/, and the
+  # task's guide names them as the current text, newer than any copy under /workspace/. Porelo never
+  # reads what they hold. A task brought back keeps the files it was made with, and a start that
+  # brings it back with given is refused with exitCode 64; a new task of the name has only its
+  # own. Not offered through a task's MCP start.
+  given: ?[string]string,
   # Does everything up to starting the container, then stops and reports. Nothing is created.
   dryRun: ?bool,
   # What to do with a blocked connection: prompt, allow, deny or off. Default: "prompt".
@@ -795,11 +1101,8 @@ method Start(
   # removed what it had just made, which is how an operator lost a task by typing the obvious
   # thing. Keeping is the safe default; throwing away is the deliberate one.
   rm: ?bool,
-  # Returns as soon as the task exists, instead of waiting for the build to finish.
-  #
-  # Named for what it does rather than 'detach': over this interface Start never attaches anything,
-  # so there is nothing to detach from. The command line has a second switch for not attaching a
-  # terminal, which is a question only a terminal has.
+  # Unused: accepted and ignored, so a client that sends it keeps working. Start answers when its
+  # start has ended either way.
   now: ?bool,
   # How somebody is meant to be involved, recorded on the task and answered by List and Watch.
   # Default: UNATTENDED when a prompt is given, SHELL otherwise - so a caller that gives a prompt
@@ -811,11 +1114,26 @@ method Start(
   # Giving one makes this call RUN the agent, not merely start the container: the call lasts as
   # long as the run does, and with "more" the agent's own output arrives as it is produced. The
   # exit code in the reply is then the agent's. Without a prompt the container comes up and the
-  # call returns, as it always did.
+  # call returns, as it always did. With mode AGENT the prompt runs nothing: the call returns once
+  # the task stands, and the agent's attended session, when it first starts, takes the prompt as
+  # its first turn and then waits for the person. An agent that cannot take one is refused with 64.
   prompt: ?string,
-  # Model to ask the agent for, when it declares a model flag. Ignored otherwise.
+  # Model to ask the agent for, one word. Omitted, the repository's porelo.yml's for the task's
+  # provider, else project.yml's (providers.<provider>.model), else the agent's own default. A model
+  # for an agent that declares no model flag, a model that is not one word, and through a task's
+  # MCP endpoint one its mcp.agents does not allow, whichever file named it, are refused with
+  # exitCode 2 before anything is made. A task brought back keeps the model it was made with.
+  # A client leaves this out to take the default when the person did not choose a model. Sending
+  # even that same model explicitly records modelFrom as "start", rather than its file's source.
   model: ?string,
-  # Turn limit, when the agent declares one.
+  # Reasoning effort to start the agent with: one of the values its Agent entry lists in efforts,
+  # handed to it as its definition says. Absent, nothing is passed and the agent runs on its own;
+  # "no effort" has no other spelling. A value the agent does not list, or any for an agent that
+  # lists none, is refused with exitCode 64 before anything is made. A task brought back keeps the
+  # effort it was made with: the same is taken, another is refused with exitCode 64. A client marks
+  # a proposed effort only where the chosen agent lists it.
+  effort: ?string,
+  # Turn limit, when the agent declares one. Only for a run: an attended task's session has none.
   maxTurns: ?int,
   # The most subagents the agent may run at the same time inside the task; 0 for none. Default: the
   # project file's limits.subagents, else 0. A number the agent's definition says it cannot enforce
@@ -824,16 +1142,73 @@ method Start(
   # project file's number. A task brought back keeps its number and hands it to its agent again: the
   # same number is taken, another is refused with exitCode 64.
   subagents: ?int,
-  # How long the agent may run, in minutes. Default: 30. On expiry the run is killed and whatever
-  # it produced is kept - the exit code is 124 and the log holds what it managed to say.
+  # How long the agent may run, in minutes. Default: 30. On expiry Porelo stops the task as a stop
+  # does, ending its agent in the container, and keeps what it produced - the exit code is 124, the
+  # log holds what it managed to say, and List's agentEnded says limit: true. The limit holds when
+  # porelod restarts during the run: at its start and once a minute, porelod ends a run whose
+  # minutes passed while no process waited on it any more. Only for a run: an
+  # attended task's session lasts as long as the person keeps it. Anything but a whole number from 1
+  # to 2147483647 (0, a negative number, a fraction, a string, a boolean) is refused with exitCode 64
+  # before anything is made, in the command line's words; only an absent one takes the default.
   minutes: ?int,
+  # A key of the caller's own, kept with the task from its creation and given back on its row by List
+  # and Watch as callerKey, so a caller that restarts finds every task it started. Opaque to porelo:
+  # it is never shown as a caption, Label never changes it, and a start that brings back an existing
+  # task keeps the key that task was created with. At most 200 characters and no control characters,
+  # else org.varlink.service.InvalidParameter. Default: none.
+  callerKey: ?string,
   # Asks the person's own computer for the task's certificate, on a stream only: one continuing reply
   # may carry certify, answered by Certify on another connection. An interface sends it for a machine
   # that is not its own, as a host starts no task uncertified and holds no person's agent.
   # A start in default on a machine that is no host asks nothing, as nothing there needs a certificate.
   certify: ?bool,
   # Streams each step as its own reply, carrying step and no line. Default false: the stream is lines only, as before.
-  steps: ?bool
+  steps: ?bool,
+  # The issues and the phases of the project's own workflow this task works on, in their order, kept in its record
+  # as given. Each issue, such as a tracker's reference owner/repo#123, is 1 to 200 characters of printable ASCII
+  # without a space, ':' or '`', not led by '-', and named once; each phase is one line of 1 to 64 characters; at
+  # most 16 pairs. The first pair's issue is the one each of the task's commits carries as the trailer
+  # 'Porelo-Issue: <issue>', its gate refusing a push with a commit that does not, and the one its guide names. An
+  # empty list, an issue named twice and a pair either rule refuses are refused with exitCode 64; a value that is
+  # neither a list of (issue, phase) nor one such pair, as an older client sends it, is
+  # org.varlink.service.InvalidParameter. Porelo does not know the phases. A task brought back
+  # keeps the work it was made with. On a host, a start given work first has the host follow central once
+  # ('porelo host follow') and is refused with exitCode 69 before anything is made unless the host's copy of
+  # the repository then holds central's main: a copy behind central that the follow could not move (a change
+  # of its workflows), one that diverged from it, or a standing that cannot be read. Its line names the way
+  # back: 'porelo host pull' and a task that merges central/main, or 'porelo host push' where only the host is
+  # ahead. CanStart does not ask the host to follow and does not answer this.
+  work: ?[](issue: string, phase: string),
+  # The rights the run holds, actions and judgments in one list. Absent takes the default set, push and
+  # reply; an empty list is a start holding no right and never becomes the default set. A start whose
+  # place is another task's work has no default: absent there is refused as StartRuleBroken with the rule
+  # foreignWorkNamesNoRights. A list that breaks one of Porelo's own start rules is refused as
+  # StartRuleBroken before anything is made. A task brought back keeps its recorded parts when the start
+  # names none; one naming other parts is refused as RightsChanged.
+  rights: ?[]Right,
+  # Tasks of the same project whose reviewed work this one may read, once it landed: its clone fetches
+  # each one's landed refs as refs/remotes/origin/landed/<task>/<branch>, read only. Work still waiting
+  # at the gate is shown only to a task whose place is exactly that push, never through this list.
+  # Absent and empty both mean none. A name that is not a plain task name is refused with
+  # org.varlink.service.InvalidParameter.
+  readLanded: ?[]string,
+  # The account the run's released items are written as at a pull request: author, the account that
+  # opened it, or review, the forge instance's account. Taken only where the place is a pull request;
+  # at a gate push or without a place it is refused as org.varlink.service.InvalidParameter("writeAs"),
+  # never ignored. Absent at a pull request it is author.
+  writeAs: ?(author, review),
+  # Whether the task gets the project's services: its credentials, package repositories, host services
+  # and egress, as one switch. Absent is true for own work, read only and no workspace. At another
+  # task's work it is always off, and true there is refused as StartRuleBroken with the rule
+  # foreignWorkLeadsOut.
+  projectServices: ?bool,
+  # Where the run works. Absent means the task's own gate push. A gate push or pull request of another
+  # task of the same project makes the run's workspace that task's work, frozen at its head and read
+  # only; no field of its own names that kind. A pull request the forge does not know as NoSuchPullRequest; a
+  # place that cannot be read as PlaceUnreadable. A further
+  # run at the same place is a further Start of the same task: there is no round or sequence.
+  # A task that is running answers as it does without a place.
+  place: ?Place
 ) -> (
   # One line of output. Set on every continuing reply unless steps: true was requested.
   line: ?string,
@@ -852,10 +1227,15 @@ method Start(
   baseSource: ?string,
   # What the launch returned. 0 is success. Set on the final reply.
   exitCode: ?int,
+  # Set on the final reply when a start without task took the repository's name followed by a number
+  # because the name itself was held: "name my-first is held by the task my-first; this task is my-first-2".
+  # The holder is "the task <name>", "a container of that name" or "a start reserving it". Absent when
+  # the first name was free or the start named its task.
+  nameNote: ?string,
   # Everything that was printed, for a caller that did not ask to stream. Empty when it did.
   output: ?[]string,
-  # What it did, or the refusal it answered with. Set on the final reply: CREATE or RESUME for what
-  # it did; RUNNING, NEEDS_VAULT or PREDATES_RESTART for a refusal.
+  # What it did, or the refusal it answered with. Set on the final reply: CREATE, RESUME or RERUN
+  # for what it did; RUNNING, NEEDS_VAULT or PREDATES_RESTART for a refusal.
   #
   # A refusal is an ordinary reply, not an error, and carries container and exitCode like any
   # other - the exit code is the refusal's. NEEDS_VAULT in particular arrives this way, so an
@@ -869,7 +1249,23 @@ method Start(
   # What went wrong per helper, for the ones that did not come back.
   problems: ?[]string,
   # Set when the image the container was built from has changed since it was created.
-  imageDrift: ?string
+  imageDrift: ?string,
+  # One line the run itself wrote, as its agent shows it, on a streamed reply while this start's own
+  # run goes on: a start given a prompt, or one that runs an UNATTENDED task's agent again from its
+  # inbox without one (action RESUME or RERUN). Apart from line, which is Porelo's own. A caller
+  # that reads too slowly loses lines rather than holding the run; a last runLine then says how
+  # many, and Logs has them all.
+  runLine: ?string,
+  # What this start's own run answered, on the final reply of a start that ran its agent, streamed
+  # or not - given a prompt, or an UNATTENDED task's run from its inbox without one: the record its
+  # agent declares as its last message, or else the run's last lines. At most 16 KiB of UTF-8, cut
+  # at a code point. Absent when this call ran nothing: a refusal, a task found running, or a task
+  # that is not UNATTENDED brought back without a prompt.
+  result: ?string,
+  # ANSWER for the agent's own answer, LAST_LINES for the run's last lines in its stead.
+  resultKind: ?string,
+  # Whether result was cut to fit.
+  resultCut: ?bool
 )
 
 # What a start asks a person's computer to certify: the key of the one principal, until the end.
@@ -892,6 +1288,18 @@ type CertifyRequest (
 # one of them. What comes back is checked as any other, and the start refuses what does not hold. A
 # start waits five minutes, or until its stream closes. An id no start waits by is NoSuchStart.
 method Certify(start: string, certificate: ?string, refused: ?string) -> ()
+
+# Begins a task's run at the pull request its start recorded as its place, in this daemon, which keeps
+# every task's current run: its head pinned, its whole conversation read and checked, and what passed
+# handed to the task's mailbox. A start that is not the daemon's own asks this once the task's gate,
+# recorded place and mailbox exist and before its agent runs, so its agent's first look finds the
+# conversation. run is the run's number at that place, head the commit it is pinned to. A task whose
+# recorded place is no pull request is InvalidParameter("task"); the refusals are Start's:
+# NoSuchPullRequest, UnknownForge, NotTheTasksPush, PlaceUnreadable. Never offered on a task's socket.
+method BeginRun(
+  # Container name.
+  task: string
+) -> (run: int, head: string)
 
 # Brings a task's repository at the gate up to its source - the checkout it was started in, or its remote - and,
 # when a branch moved, tells its agent through its mailbox, so 'git fetch porelo' in the task brings it. Starting a
@@ -1029,7 +1437,8 @@ type StartOutcome (
   # The project file is not there, or cannot be read.
   NO_PROJECT_FILE,
   # The task name is one Start would refuse: lowercase letters, digits and inner hyphens, not
-  # only digits, and 'porelo-<project>-<task>' at most 65 characters. 'detail' says which.
+  # only digits, and 'porelo-<project>-<task>' at most 64 characters, which no shorter form of a
+  # new task's container name exceeds. 'detail' says which.
   BAD_TASK_NAME,
   # A value handed in is one project.yml's 'parameters:' does not allow, names no declaration, or a required
   # one is missing. 'detail' names it and what is allowed. Answered in every mode: no value nothing allows
@@ -1079,6 +1488,10 @@ type StartOutcome (
   UNKNOWN_PROVIDER,
   # The provider is declared but does not serve the dialect this agent speaks.
   WRONG_DIALECT,
+  # The agent speaks each provider's own wire format ('native') and lists the providers it knows,
+  # and the one asked for is not among them: it would be told only the name, and fail inside the
+  # task. 'detail' names the agent, the provider and the ones it knows.
+  UNKNOWN_TO_AGENT,
   # The vault cannot be read, so this question cannot be answered yet. NOT a missing credential:
   # the one thing that helps is unlocking, and telling somebody to store a secret they already
   # have is the instruction that cannot help them.
@@ -1102,12 +1515,30 @@ type StartOutcome (
   # reaches at the gate's address. 'detail' names them. Start refuses the same case before anything is
   # created.
   HOST_SERVICES_NEED_A_GATE,
+  # allRepositories was asked beside an option that names one repository or its gate: repository,
+  # branch or noGate. 'detail' names them, in the words Start refuses with (exitCode 64).
+  ALL_REPOSITORIES_REFUSED,
+  # readOnly was asked beside an option it cannot go with: allRepositories, branch or noGate.
+  # 'detail' names them, in the words Start refuses with (exitCode 64).
+  READ_ONLY_REFUSED,
+  # given holds a name that is no file's, more than 16 files, one over 1 MiB, or more than one
+  # message carries. 'detail' says which, in the words Start refuses with (exitCode 64).
+  GIVEN_REFUSED,
+  # effort names a value the agent does not list in its efforts, or the agent lists none. 'detail'
+  # names the agent and the values it takes, in the words Start refuses with (exitCode 64).
+  EFFORT_REFUSED,
   # project.yml's limits.subagents, or the repository's, asks the agent for more subagents at the same
   # time than its definition says it can enforce. 'detail' names the agent and where the number came
   # from, in the words Start refuses with (exitCode 64).
   SUBAGENTS_REFUSED,
+  # The model the start would settle - the repository's porelo.yml's or project.yml's for the
+  # provider - is one the agent cannot take: its definition declares no model flag. 'detail' names
+  # the model and the file. Start refuses the same case before anything is created (exitCode 2).
+  MODEL_REFUSED,
   # In 'default', the repository's porelo.yml, or the person's .porelo.yml beside it, sets something
-  # other than the project does, outside the image, and this machine has not allowed exactly that.
+  # other than the project does, its image among it, and this machine has not allowed exactly that;
+  # or, in a project written on this machine, the repository's porelo.yml, which nobody signs, adds
+  # a base image, a line or a variable to the image that this machine has not allowed.
   # settingsToAllow lists what is new, changed or removed since the last allowance (the first time,
   # all of it); settingsHash names the whole state asked for now. AllowSettings with that hash allows
   # it, and asking again answers READY until the files ask for something else. Start refuses the
@@ -1117,7 +1548,10 @@ type StartOutcome (
   # a project admin or a developer with access to that repository. 'file' and 'commit' name it,
   # 'detail' says it in words; a history rewritten under the change this machine took last is refused
   # the same way, with 'commit' "". Nothing here can allow it: a person signs with their own commit.
-  SETTINGS_UNSIGNED
+  SETTINGS_UNSIGNED,
+  # The work given, its issue or its phase, is not one Start takes (see Start's work). 'detail' says which,
+  # in the words Start refuses with (exitCode 64). Answered before anything else, as Start refuses it.
+  WORK_REFUSED
 )
 
 # One setting a repository's porelo.yml asks for that this machine has not allowed.
@@ -1140,6 +1574,21 @@ type RemovedSetting (
   by: string
 )
 
+# A credential this machine's vault lacks for something beside the agent: what it is for, the vault key,
+# and what to run ON THAT MACHINE to make it. storeCommand reads nothing on standard input.
+type MissingCredential (
+  # "builds" for now; show an unknown one as it comes.
+  for: string,
+  credential: string,
+  # The forge whose builds the entry reads, by the name the project's builds.forge gives it ("github"
+  # for one); "" for a task whose record was kept before this field.
+  forge: string,
+  storeCommand: []string,
+  # What it takes after storeCommand ran: "ask-again" (CanStart answers anew) or "restart" (a running task
+  # follows its builds only from its next start). Show an unknown one as it comes.
+  afterStore: string
+)
+
 # Whether work could start here, asked before anything is created.
 #
 # This exists because the only other way to find out was to start a task and read an exit code and
@@ -1160,9 +1609,28 @@ method CanStart(
   repository: ?string,
   # Whether the run would have no workspace and no git gate, as Start takes it.
   noGate: ?bool,
+  # Whether the run would read every repository of the project, as Start takes it. Answered from the
+  # options alone: beside repository, noGate or branch it is ALL_REPOSITORIES_REFUSED; otherwise no
+  # repository needs naming, and the rest is answered as for a run without a gate. Whether each
+  # repository can be read is not asked here, since that reaches every upstream: Start names each one
+  # it cannot read, and refuses when it can read none.
+  allRepositories: ?bool,
+  # Whether the run would read its one repository, as Start takes it. Beside allRepositories, noGate
+  # or branch it is READ_ONLY_REFUSED; otherwise the repository is named as for any start (else
+  # NO_REPOSITORY_CHOSEN), and the rest is answered as for a run on it without a gate.
+  readOnly: ?bool,
+  # The files Start would be given, as it takes them; checked by the same rule, GIVEN_REFUSED
+  # otherwise. Their text is not kept.
+  given: ?[string]string,
+  # The effort Start would be given, as it takes it; one the agent does not list is EFFORT_REFUSED.
+  effort: ?string,
   # The task name Start would be given. Omitted, no name is checked. The length rule needs the
   # project, so without one only the characters are.
   task: ?string,
+  # Optional container spelling: [a-z][a-z0-9-]*, at most 16 characters, no underscore or porelo- prefix.
+  # Recorded at creation, alongside the project's short spelling; an existing task keeps its name.
+  # Container creation currently retains the legacy name.
+  short: ?string,
   # Agent to run. Omitted, the agent the project file names for the repository, else the only one
   # installed.
   agent: ?string,
@@ -1178,12 +1646,29 @@ method CanStart(
   parameters: ?[string]ParameterValue,
   # The task's branch at the forge, named outright, as Start takes it. Omitted, the one project.yml's
   # branch scheme makes. One its pattern refuses is BRANCH_REFUSED.
-  branch: ?string
+  branch: ?string,
+  # The issues and the phases the task would work on, as Start takes them. Work Start would refuse with exitCode 64 is
+  # WORK_REFUSED; a value Start answers InvalidParameter for is InvalidParameter here too.
+  work: ?[](issue: string, phase: string),
+  # The run's rights, as Start takes them; refused by the same errors.
+  rights: ?[]Right,
+  # The tasks whose landed work the run would read, as Start takes them.
+  readLanded: ?[]string,
+  # The account the run would write as at a pull request, as Start takes it; refused by the same errors.
+  writeAs: ?(author, review),
+  # Whether the run would get the project's services, as Start takes it; refused by the same errors.
+  projectServices: ?bool,
+  # Where the run would work, as Start takes it; refused by the same errors.
+  place: ?Place
 ) -> (
   # Whether work could start. True exactly when outcome is READY, so branch on whichever suits -
   # but never infer the ACTION from this alone: three different things somebody has to do all
   # arrive as false.
   ready: bool,
+  # Credentials missing for optional services beside the agent; these do not hold the start back.
+  # Empty off a host, with no project, or before the check gets this far. A shut vault answers
+  # VAULT_LOCKED with missing empty. Each entry here has afterStore "ask-again".
+  missing: []MissingCredential,
   outcome: StartOutcome,
   # The agent this was answered for. "" when none was settled.
   agent: string,
@@ -1232,11 +1717,12 @@ method CanStart(
   commit: string
 )
 
-# A person's yes to the settings a SETTINGS_NOT_ALLOWED answer showed, for a repository of 'default'.
-# outcome is ALLOWED, after which CanStart answers READY for them, or CHANGED when porelo.yml moved since
-# the hash was answered: nothing is allowed, and CanStart shows the new list. A name that is no
-# repository of 'default' is CHANGED too, with nothing to allow.
-method AllowSettings(repository: string, hash: string) -> (outcome: string)
+# A person's yes to the settings a SETTINGS_NOT_ALLOWED answer showed, for a repository of 'default',
+# or of the project named, which CanStart was asked about. outcome is ALLOWED, after which CanStart
+# answers READY for them, or CHANGED when porelo.yml moved since the hash was answered: nothing is
+# allowed, and CanStart shows the new list. A name that is no repository of the project is CHANGED
+# too, with nothing to allow.
+method AllowSettings(repository: string, hash: string, project: ?string) -> (outcome: string)
 
 # Gives a task a changeable caption, or removes one.
 #
@@ -1411,10 +1897,43 @@ method Tail(
   # they are when the task has no agent here, or its agent formats nothing.
   formatted: ?bool
 ) -> (
+  # As they go on the wire, escaped and formatted, the lines of one reply fit one message: the lines
+  # that do not are the next reply's, and one line too long alone comes cut to its first part.
   lines: []string,
   # Byte position in the log where this reply's first line starts, so a client can later ask for
   # what lies before it.
-  offset: int
+  offset: int,
+  # What offset is a position in: an opaque name of this log, from its file key and creation time.
+  # A new run's log, made anew in its place, has another; a client passes it on to LogBefore.
+  of: string
+)
+
+# A task log's lines before a position, for a client scrolling up past what Tail sent. A page, not a
+# stream; the client asks again with the offset it got. A page fits one message as sent, escaped and
+# formatted: fewer lines than asked when they are long, and one line too long alone comes cut.
+method LogBefore(
+  # Container name.
+  task: string,
+  # File name within the task's state directory, ending in .log. Not a path.
+  log: string,
+  # Tail's of for the log the position is in. A log made anew since, as a new run's, is NoSuchLog,
+  # though the new one has grown past the position; a call without it is InvalidParameter.
+  of: string,
+  # A byte position Tail or this method returned as offset; the lines end just before it. Any line
+  # start is taken, and so is the start of a piece of a line longer than a page, which comes in
+  # pieces from its end; any other position inside a line, or below 0, is InvalidParameter, never a
+  # guess, and one past the log's end is NoSuchLog.
+  before: int,
+  # How many lines at most, 1 to 1000; anything else is InvalidParameter.
+  lines: int,
+  # As for Tail.
+  formatted: ?bool
+) -> (
+  lines: []string,
+  # Byte position where the first returned line starts: the next call's before.
+  offset: int,
+  # True when offset is 0: nothing lies before.
+  atStart: bool
 )
 
 # What a task's terminal session shows, read without attaching: for work in a terminal, which has
@@ -1432,7 +1951,40 @@ method Screen(
   lines: []string,
   # Whether the task has a terminal session: false for unattended work or a session that ended,
   # and then lines is empty.
-  live: bool
+  live: bool,
+  # Byte position of the end of porelod's recording of the session's output: the first before for
+  # ScreenBefore. Absent when porelod keeps no recording of this session.
+  end: ?int,
+  # What end is a position in: an opaque name of this recording, from the session's start. A new
+  # session's recording has another; a client passes it on to ScreenBefore. "" without a recording.
+  of: string
+)
+
+# A terminal session's earlier output, from the recording porelod keeps of it, for scrolling past
+# the lines Screen gives. Output older than the recording's start, which is kept as records.kept_days
+# says, answers atStart true.
+method ScreenBefore(
+  # Container name.
+  task: string,
+  # Screen's of for the recording the position is in. A recording begun anew since, as a new
+  # session's, is NoSuchLog, though the new one has grown past the position; a call without it is
+  # InvalidParameter.
+  of: string,
+  # A byte position Screen gave as end or this method gave as offset; the lines end just before it.
+  # Any line start is taken, and so is a piece's start in a line longer than a page; any other
+  # position inside a line, or below 0, is InvalidParameter, one past the recording's end is
+  # NoSuchLog, and one older than what is kept answers atStart true.
+  before: int,
+  # How many lines at most, 1 to 1000; anything else is InvalidParameter.
+  lines: int,
+  # As for Screen.
+  escapes: ?bool
+) -> (
+  lines: []string,
+  # Byte position where the first returned line starts: the next call's before.
+  offset: int,
+  # True when nothing older is kept.
+  atStart: bool
 )
 
 # ---------------------------------------------------------------------------- files handed to a task
@@ -1525,9 +2077,78 @@ error EarlierWorkWaits(task: string, commit: string, subject: string)
 # name as Start settled it; 'detail' says which; name another branch with Start's 'branch' or other values.
 error BranchTaken(task: string, branch: string, detail: string)
 
+# Start refuses an actual container name held by another task or unrecognized state, before task
+# files, helpers or secrets are made. project and task are the requested logical owner. Optional
+# ownerProject and ownerTask identify the proven owner; absence means occupied with unknown ownership.
+# Choose another task name. The CLI answers exit 64 for the same refusal.
+error ContainerNameTaken(container: string, project: string, task: string, ownerProject: ?string, ownerTask: ?string)
+
+
 error NoSuchTask(task: string)
 
+# Result for a task that was started without Start's result: it hands nothing back.
+error NoResultNamed(task: string)
+
+# The refusals of a task's MCP socket, the per-task socket porelod serves a task's porelo-mcp on
+# when its project's file has an 'mcp' section. Over that socket the caller is the socket's task, never
+# a field of the call; nothing was started or stopped.
+#
+# A Start would have the caller running more tasks at once than 'mcp.tasks' allows. 'running' counts
+# its tasks running or being started now, 'limit' is the file's.
+error ChildLimitReached(parent: string, running: int, limit: int)
+# A Start asked for a longer run than 'mcp.minutes' allows; 'minutes' is what it asked for, or the
+# default it would get.
+error RunTooLong(minutes: int, limit: int)
+# A Start named an agent, or a model of it, that 'mcp.agents' does not allow, or named no agent. 'model'
+# is "" for none; 'allowed' names each allowed agent, as agent:model where its models are listed.
+error AgentNotAllowed(agent: string, model: string, allowed: []string)
+# A Stop, a Start bringing a task back, or another call naming a task, named a task the caller did not
+# start, or none; any call but Stop may also name the caller itself. 'parent' is the task that did, ""
+# for one a person started or none.
+error NotItsOwn(task: string, parent: string)
+# A Start carried a parameter a task may not set. It may set task, project, repository, branch, from,
+# prompt, agent, model, minutes, mode, maxTurns, parameters, dryRun and steps; whatever widens what the
+# started task may reach, hold or spend is the project file's or a person's.
+error ParameterNotAllowed(parameter: string)
+# A Start named another project than the caller's own, or none. 'own' is the caller's.
+error ProjectNotItsOwn(project: string, own: string)
+# A Start carried no prompt: a task starts another only to run one, unattended.
+error PromptRequired()
+# A Start asked for another mode than UNATTENDED; 'mode' is what it asked for.
+error UnattendedOnly(mode: string)
+# A Start asked for a run of less than a minute; 'minutes' is what it asked for.
+error RunTooShort(minutes: int)
+# A Start bringing a task back named another agent or model than the task was made with; 'agent' and
+# 'model' are the task's own, "" for the agent's default model.
+error MadeWithAnother(task: string, agent: string, model: string)
+# A Start named a task another Start is making or bringing back now.
+error AlreadyStarting(task: string)
+# A Start, CanStart or ReviewOpen named a pull request at a host that is no forge instance this machine knows.
+error UnknownForge(host: string)
+# A Start or CanStart named ownPullRequest, and no pull request comes from the task's branch.
+error NoPullRequest(branch: string)
+# A Start or CanStart named a gate push that is not this task's own; 'head' is the push's head.
+error NotTheTasksPush(head: string)
+# A Start or CanStart broke one of the rules Porelo keeps itself, refused before anything is made. 'rule' is
+# foreignWorkLeadsOut (another task's work with project services, push, added credentials or a clearance of
+# allow or off), foreignWorkNamesNoRights (another task's work and no rights named), rejectWithPush,
+# rejectOverOwnWork, pushWithoutOwnWork, or exceedsParent (a start through a task's endpoint asking more
+# than the starting task holds); 'detail' names the part that breaks it.
+error StartRuleBroken(rule: string, detail: string)
+# An act needs a right the task's start did not record; 'act' names what was tried.
+error RightMissing(right: string, act: string)
+# A Start of an existing task named parts other than the ones its first start recorded.
+error RightsChanged()
+# A Start or CanStart named a place that could not be read; nothing was made. 'detail' is for a person.
+error PlaceUnreadable(
+  reason: (NoSuchPush, NotInProject, MovedSinceReview, MissingForgeToken, ForgeAdapterMissing, Unreachable, HeadNotFetched,
+    ForgeFileUnreadable),
+  detail: string
+)
+
 # The named log is not a file in that task's state directory.
+# A log or a session recording that is not there, is not the one a client's of names, or ends before
+# the position a client holds, as after a new run: the client starts again from Tail or Screen.
 error NoSuchLog(task: string, log: string)
 
 # A gate method was called without naming a project file.
@@ -1536,12 +2157,18 @@ error NoSuchLog(task: string, log: string)
 # Refused rather than treated as the default: quietly doing the cheapest thing when somebody asked
 # for the most expensive is exactly the failure the depths exist to prevent.
 error UnknownRebuild(rebuild: string)
-# Reported token totals; missing counts requests with an unreported value.
+# Reported token totals. tokens is null only where no request of the set reported the kind; missing
+# counts only the requests whose format reports the kind and whose reply left it out (a cut stream, a
+# failed request), never one whose format does not report it. A line of a format Porelo does not know
+# counts every kind it left out as missing.
 type UsageCount (
     tokens: ?int,
     missing: int
 )
 
+# output includes reasoning in every format; reasoning is the part of it a format names, and absent
+# for a format that names none. A total of tokens is input + cacheRead + cacheWrite + output, never
+# output plus reasoning.
 type UsageTotals (
     requests: int,
     input: UsageCount,
@@ -1568,6 +2195,143 @@ type Usage (
 
 # Reads current usage or the last retained record of a removed task, without network access.
 method Usage(task: string) -> (usage: Usage)
+
+# One tool call of a task's unattended run, in Porelo's own format: each agent maps its stream into it, and porelod
+# keeps no provider's shape.
+type ToolCall (
+  # The task's container name.
+  task: string,
+  # The agent's own id of the call, 1 to 128 characters of printable ASCII without a space; with run, it names one
+  # call of the record. Absent in older records.
+  id: ?string,
+  # The id of the sub-agent call of the same run it ran under, when that call started before it and had not ended;
+  # absent outside any sub-agent.
+  parent: ?string,
+  # The unattended run of the task it came from, counted from 1; absent in older records.
+  run: ?int,
+  # The agent's own name for the tool, 1 to 128 characters of printable ASCII, else "".
+  tool: string,
+  # shell, edit, read, search, web, sub-agent, mcp or other; a kind the agent cannot tell is other. A later release
+  # may add one; show an unknown one by its text.
+  kind: string,
+  # ISO-8601, and where it came from: stream (the agent's own time), duration (the other end's time less or plus
+  # the duration the end gave) or arrival (when porelod read the line).
+  start: string,
+  startFrom: string,
+  # Absent for a call the run never ended. A call in the background ends when its job ends, joined by the job's id.
+  end: ?string,
+  endFrom: ?string,
+  # A shell call's whole command line, masked by porelod before it was stored: a token, password or key given as an
+  # option's value, an Authorization header's value, an environment value whose name ends in _TOKEN, _KEY, _SECRET
+  # or _PASSWORD, a URL's user information, a string shaped like a known credential (also inside a longer word) and
+  # every non-blank value of the vault read as ***, the rest of the line kept. Every command line is *** whole when
+  # the vault could not be read. Absent for any other kind.
+  command: ?string,
+  background: bool,
+  # The issue of the task's work a sub-agent is named by, exactly as the work names it (ISSUE-1, owner/repo#123): for
+  # a sub-agent call its own name, else the sub-agent's it ran under, followed up through nested sub-agents. Absent
+  # outside any sub-agent so named.
+  issue: ?string,
+  # For a sub-agent call, the tokens the sub-agent spent as its agent's stream gave them at its first end, each kind
+  # absent where it gave none; absent for every other call and where the stream gives none. The task's totals stay
+  # the usage record's.
+  tokens: ?SubAgentTokens
+)
+
+# A sub-agent's tokens as its agent's stream counts them, each kind as UsageTotals names it.
+type SubAgentTokens (
+  input: ?int,
+  cacheRead: ?int,
+  cacheWrite: ?int,
+  output: ?int,
+  reasoning: ?int
+)
+
+# What one task worked on, from when to when, and with what: written when the task is made, completed at each run's
+# end, at a stop and at its removal, and kept past the removal as its usage record is.
+type TaskRecord (
+  # The task's container name.
+  task: string,
+  project: string,
+  repository: ?string,
+  # As Start's work gave it, in its order, or absent; always a list, an older record's one pair a list of one.
+  work: ?[](issue: string, phase: string),
+  agent: ?string,
+  # Absent for the agent's default; modelFrom as Task.modelFrom.
+  model: ?string,
+  modelFrom: string,
+  # The reasoning effort, as Task.effort; absent when the start named none.
+  effort: ?string,
+  # ISO-8601. endedAt and end are absent while it works.
+  startedAt: string,
+  # ISO-8601 time of the record's last write, preserved by keep and restore; absent in older records.
+  updatedAt: ?string,
+  endedAt: ?string,
+  # done or failed for a run's exit code, else stopped or removed, whichever came first since its last run.
+  end: ?string,
+  # The usage record's totals, as Usage answers them: live while the task is there, as kept at its removal after.
+  totals: UsageTotals,
+  # ASKED when its agent read its runs' tool calls, CANNOT_SAY when it could not (never read as no tool having run),
+  # DID_NOT_ASK when no unattended run was read: an attended session is not measured.
+  toolCallsAsked: Asked,
+  # Every call of all its runs, in their order; only the first of them when toolCallsNext is present.
+  toolCalls: []ToolCall,
+  # Present when the record with all its calls would not fit one message: toolCalls holds its first calls, and
+  # RecordCalls from this position gives the rest. Absent when toolCalls is whole.
+  toolCallsNext: ?int,
+  # The unattended runs whose calls the record holds; absent in older records.
+  runs: ?int,
+  # As Task.workspace, rights, readLanded, writeAs and projectServices, for the record's start.
+  workspace: (own, foreign, readOnly, allRepositories, none),
+  rights: []Right,
+  readLanded: []string,
+  writeAs: (author, review),
+  projectServices: bool,
+  # As Task.place, for the record's last run; absent in older records.
+  place: ?Place,
+  # As Task.held; absent in older records.
+  held: ?int
+)
+
+# Where the next page of Records starts: given by the daemon, passed back whole, never made by a client.
+type RecordsFrom (
+  # When the first page was read, ISO-8601: no later page answers a record started after it.
+  asOf: string,
+  # The startedAt and task of the first record the next page answers, which together name it.
+  startedAt: string,
+  task: string
+)
+
+# Answers a project's task records whose task ended at since or later, or works still, removed tasks' among them,
+# oldest start first. since is ISO-8601: a time with its offset, or a date in the machine's zone. An empty project
+# or a since that is no time answers InvalidParameter. Read as the person, never from a task's socket.
+# A reply fits one message. What does not fit comes in pages: next is present when more records follow, and Records
+# with the same project and since and with from set to that next answers them; the pages together give every
+# record once, in order. A record too large alone for one message comes first in its page, alone, with its first
+# calls and toolCallsNext. Records started after the first page was read (asOf) are left to the next Records
+# without from; a record already answered that changes meanwhile is not answered again. A later page is answered
+# from the records the first page read, which the daemon keeps five minutes (the 4 newest readings, at most 64 MiB
+# of them together), so a run of pages reads the record files once; a page whose reading is no longer kept reads
+# them again. A from whose record is then no longer stored answers RecordChanged; a from that is no RecordsFrom the
+# daemon gave answers InvalidParameter naming from.
+method Records(project: string, since: string, from: ?RecordsFrom) -> (records: []TaskRecord, next: ?RecordsFrom)
+
+# The rest of one record's tool calls, page by page, in the record's order, for the record as Records answered it.
+# Each page fits one message; next is absent when this page holds the record's last call.
+method RecordCalls(
+  project: string,
+  # The record's task, startedAt and updatedAt, as Records answered them; updatedAt absent where the record had none.
+  task: string,
+  startedAt: string,
+  updatedAt: ?string,
+  # The record's toolCallsNext, or a page's next. A position at or past the record's last call, or below 0, answers
+  # InvalidParameter naming from.
+  from: int
+) -> (toolCalls: []ToolCall, next: ?int)
+
+# The record a position was given for is no longer stored as it was answered: gone, or written since (its
+# updatedAt differs), so pages from it would skip or repeat calls. The client reads Records again from its start.
+error RecordChanged(task: string)
 
 # A package, a tool or another setting a first start found, and the file it was read from. Where
 # something is set and could not be read without running something, value starts with "unknown: " and
@@ -1618,6 +2382,14 @@ method ConfirmFirstStart(checkout: string, hash: string, proxy: ?[string]string)
 # NOTHING_ASKED or NOT_WRITTEN; detail says it in words.
 error FirstStartRefused(reason: string, detail: string)
 
+# The agent's selected model credential is missing. No task, hooks or helpers were made;
+# no upstream probe or token purchase ran. running names this agent's sign-in, when one runs;
+# it is "" while that sign-in is being prepared and has no container name yet.
+error SignInNeeded(agent: string, running: ?string)
+
+# The vault cannot be read. Unlock it before starting again; nothing was made.
+error VaultLocked()
+
 # A project this machine knows about.
 #
 # Not something Porelo creates: a project is somebody's directory with a project.yml in it, and
@@ -1636,6 +2408,23 @@ type Project (
   # it to say so. TakeProject brings the file, when the person acts on this row; false everywhere
   # else, and once the file is here.
   carried: bool,
+  # The host's published project progress: pending, carried, taking, waiting-for-token, held or refused.
+  # cannot-say when the checked publication is unavailable or refused. Absent off a host and
+  # for a valid older publication without progress. A state other than carried withholds carrying.
+  hostState: ?string,
+  # The host's explanation, or a bounded printable refusal naming the rejected field/value.
+  # Absent when there is no explanation. waiting-for-token needs the person's forge token once
+  # per new repository to install its read key and copy it; the host keeps no token.
+  hostWhy: ?string,
+  # Completed copies in the current taking run. Absent in every other state and while counting.
+  hostTakingDone: ?int,
+  # Deduplicated repositories to copy in this taking run. Absent while counting or outside taking.
+  hostTakingTotal: ?int,
+  # UTC instant when this project's current taking run began. Absent outside taking.
+  hostTakingSince: ?string,
+  # The project's host file and why it does not read. Absent when the file reads or this machine
+  # is no host of the project for this person; other projects remain listed when one file fails.
+  hostFileError: ?string,
   # The gate's mirror for it. "" when it has never used the gate.
   mirror: string,
   # How many pushes are waiting for review in that mirror.
@@ -1659,6 +2448,9 @@ type Project (
   # Never empty for a project whose file can be read: every project has its own repository. Empty
   # means the file could not be read, which is NOT the same as a project with one repository - do
   # not render it as one.
+  #
+  # A project 'carried' and not taken here yet has no file: its rows are the repositories the
+  # host's file names, each carriedHere and nothing measured; none where the host carries it whole.
   #
   # Objects rather than parallel lists of names, mirrors and counts: lists indexed together drift
   # the moment one is built from a different source, and the drift is silent.
@@ -1704,7 +2496,8 @@ type Project (
   # every task of the project holds. Names only, never a value.
   credentials: [string]string,
   # The project's conversation - its room - when a peer is reached through a transport's own ('<scheme>:');
-  # absent otherwise.
+  # absent otherwise. A project a host carries, not taken here, whose host names a homeserver has the host's room, not ready until
+  # SetUpMessages or its first task; a file that does not read has one not ready, its detail saying why.
   messages: ?ProjectMessages
 )
 
@@ -1938,6 +2731,44 @@ method RemoveFromDefault(
   name: string
 ) -> (removed: bool, keys: []MachineDeployKey)
 
+# The repositories of 'default' that a project of the organization names: the project that names
+# the checkout's origin (or the address) and its key for the repository there. A start from such a
+# checkout goes into that project; the repository stays in 'default' until the person takes it out
+# with LeaveDefault, which an interface offers beside this row. Empty when the organization names
+# none of them.
+method NamedDefaultRepositories() -> (repositories: []NamedDefaultRepository)
+
+# Takes a repository out of 'default' on the person's word, through the same removal
+# RemoveFromDefault and 'porelo project default remove' make: its mirror, and anything waiting in
+# it, stays, and this machine's deploy key for it is forgotten and answered in 'keys'. Refused with
+# DefaultRepositoryInUse while a task of 'default' works on it, and with NoSuchDefaultRepository for
+# a name 'default' does not have; either way nothing is removed.
+method LeaveDefault(
+  # The repository's name in 'default', as NamedDefaultRepositories gives it.
+  name: string
+) -> (removed: DefaultRepository, keys: []MachineDeployKey)
+
+# A repository of 'default' that a project of the organization names.
+type NamedDefaultRepository (
+  # Its name in 'default', what LeaveDefault takes.
+  name: string,
+  # Where its history comes from and its approved work goes in 'default'.
+  upstream: string,
+  # The organization's project that names it.
+  project: string,
+  # The repository's key in that project, what Start's 'repository' takes there.
+  projectRepository: string,
+  # The command that takes it out of 'default' at a terminal.
+  removal: string
+)
+
+# Tasks of 'default' still work on the repository, by container name; it stays in 'default' until
+# they are removed.
+error DefaultRepositoryInUse(name: string, tasks: []string)
+
+# 'default' has no repository of that name; nothing was removed.
+error NoSuchDefaultRepository(name: string)
+
 # One repository of 'default'.
 type DefaultRepository (
   # What Start's 'repository' takes.
@@ -1954,8 +2785,146 @@ type DefaultRepository (
   remote: string,
   # The placed project that names the same repository, or "". Its tasks then start there, and an
   # interface offers to take the repository out of 'default'.
-  claimedBy: string
+  claimedBy: string,
+  # Whether a proposal is still to be offered for it: UNASKED (never answered), ASKED (TakeProposal
+  # took the person's answer, whichever it was) or CONFIGURED (a porelo.yml or .porelo.yml in its
+  # checkout, or a project of the organization naming it). CONFIGURED is worked out from what is
+  # there each time it is asked, never recorded, so no client derives whether to ask. An older
+  # daemon sends no such field.
+  proposal: string
 )
+
+# Asks every installed ecosystem adapter what it recognizes in a repository of 'default' and merges
+# the answers into a project.yml draft, as 'porelo project init' does: one implementation, two
+# renderings. Streamed: one reply per adapter as it answers, carrying 'adapter', then a last reply
+# carrying 'proposal'; asked without 'more' it is refused with StreamRequired. Nothing is written
+# and nothing is recorded - TakeProposal records the person's answer. Only a repository of 'default'
+# added from a checkout on this machine is read, as the person sees it; any other is refused with
+# NotProposable and stays UNASKED. A credential is named by its id alone: no reply carries a value.
+# An older daemon answers MethodNotFound, which a client reads as "this machine cannot propose".
+method ProposeProject(
+  # The project: "default" alone.
+  project: string,
+  # The repository's name in 'default', as DefaultRepositories gives it.
+  repository: string
+) -> (
+  # One adapter's answer, in every reply but the last.
+  adapter: ?ProposalAdapter,
+  # The merged proposal, in the last reply alone.
+  proposal: ?Proposal
+)
+
+# One ecosystem adapter's answer to ProposeProject.
+type ProposalAdapter (
+  # Its name, as Ecosystems lists it.
+  name: string,
+  # recognized; refused (it could not be started or asked); or its own refusal as its contract
+  # names it, NotRecognized or Unreadable.
+  state: string,
+  # Why, for any state but recognized; else "".
+  why: string
+)
+
+# What the adapters' answers make together.
+type Proposal (
+  # The repository's name in the draft.
+  repository: string,
+  # Where a task of the drafted project takes it from, or absent when the checkout names no address
+  # that can be kept.
+  upstream: ?string,
+  # The project.yml draft, as it would be written: read back through the project file's reader
+  # before it is answered.
+  draft: string,
+  # Every value an adapter found, but a credential.
+  values: []ProposedValue,
+  # Keys two adapters gave different values for; left out of the draft.
+  disagreements: []Disagreement,
+  # What an adapter read and could place nowhere.
+  unplaced: []ProposalUnplaced,
+  # Values found but left out of the draft: unknown, or running into another.
+  notPlaced: []ProposedValue,
+  # Each credential an adapter named, by its id, with what stores it on this machine.
+  credentials: []ProposedCredential,
+  # Why a value was refused from the draft, one sentence each.
+  refused: []string,
+  # What an adapter could not look up, where what it read stands; one sentence each.
+  notes: []string
+)
+
+# One value an adapter found.
+type ProposedValue (
+  # TOOLS or RULES.
+  part: string,
+  key: string,
+  # "" when unknown.
+  value: string,
+  # Where it was read, relative to the checkout or the person's home; "" for the machine's own.
+  file: string,
+  # Its line there, 0 when the file says it as a whole.
+  line: int,
+  # YOURS (the account porelod runs as), CHECKOUT or MACHINE.
+  origin: string,
+  # The adapter knows the key and could not read its value.
+  unknown: bool,
+  # What the adapter says of it, or "".
+  note: string,
+  # The adapter that found it.
+  adapter: string
+)
+
+# A key two adapters gave different values for.
+type Disagreement (
+  key: string,
+  # Every value given for it, with its adapter.
+  values: []ProposedValue
+)
+
+# What an adapter read and could place nowhere.
+type ProposalUnplaced (
+  file: string,
+  line: int,
+  note: string,
+  adapter: string
+)
+
+# A credential an adapter named. Its value is never asked of an adapter and never answered.
+type ProposedCredential (
+  id: string,
+  # What to run ON THIS MACHINE to store its value, as arguments: its declared record's command,
+  # else the vault's own.
+  storeCommand: []string,
+  # What that command needs on its standard input, in words, or "" when it asks for the value.
+  storeStdin: string
+)
+
+# Records the person's answer to a proposal for a repository of 'default': ASKED, whichever the
+# choice, so no interface asks again. TOOLS and TOOLS_AND_DRAFT ask the adapters again and write the
+# tools they found as the checkout's .porelo.yml, with a line in its .git/info/exclude so no tracked
+# file changes, or for a repository added by address, read from its mirror's export, under
+# $XDG_CONFIG_HOME/porelo/projects/default/<repository>/; nothing is written when they found none,
+# and a .porelo.yml that is there is never written over (NotProposable, reason configured).
+# TOOLS_AND_DRAFT also answers the project.yml draft, which the person files themselves. Nothing is
+# recorded when any of it fails. Refused as ProposeProject is, and the repository then stays UNASKED.
+method TakeProposal(
+  # The project: "default" alone.
+  project: string,
+  # The repository's name in 'default'.
+  repository: string,
+  # TOOLS, TOOLS_AND_DRAFT or NONE.
+  choice: string
+) -> (
+  # The repository as it is now.
+  repository: DefaultRepository,
+  # The project.yml draft, under TOOLS_AND_DRAFT alone.
+  draft: ?string
+)
+
+# ProposeProject or TakeProposal cannot read this repository: 'reason' is no-checkout (a repository
+# whose checkout is gone, or one added by address whose mirror holds no default branch yet - a
+# mirror's default branch is read in its place), not-default (a project other than 'default') or,
+# from TakeProposal alone, configured (a .porelo.yml is where the tools would be written). Nothing
+# was written or recorded.
+error NotProposable(reason: string)
 
 # Shows what nothing on this machine owns any more, and removes it with apply - what 'porelo prune'
 # does. Orphaned means only: a project with no running task and no readable project
@@ -1981,7 +2950,7 @@ method Prune(
 
 # One thing Prune found.
 type PrunedThing (
-  # PROJECT, TASK, IMAGE, BUILD, RECORD or VAULT.
+  # PROJECT, TASK, IMAGE, BUILD, RECORD, VAULT or SOCKET.
   kind: string,
   # A project, a container, an image, a path or a vault entry.
   name: string,
@@ -2018,6 +2987,41 @@ type Repository (
   # Why 'behind' is what it is. Same values as the project's.
   behindReason: string,
   behindDetail: string,
+  # Commits the host forge's copy of this repository has that its central forge lacks, as the
+  # host last answered: the commits for 'central' ahead, 0 for up-to-date. Absent where no answer
+  # gave a number, which is NOT 0: 0 says nothing waits to reach central. Absent off a host.
+  ahead: ?int,
+  # When 'ahead' was answered, RFC 3339; absent with it. A later answer that was refused keeps
+  # both as they were.
+  aheadMeasured: ?string,
+  # How the host forge's copy stands against central, as the host last said: up-to-date, ahead,
+  # moved-on (central has commits the copy lacks, and the copy none central lacks, or which is not
+  # known), diverged (each holds commits the other lacks: a task merges central/main), cannot-say or
+  # no-central. cannot-say is also
+  # what Porelo records when the host's answer was refused or could not be asked. New values may
+  # appear. Absent off a host, before the host's first answer, and where carriedHere is not
+  # true; ahead, aheadMeasured and centralWhy with it.
+  central: ?string,
+  # Why 'central' is cannot-say, one line: the host's own (no-read-key, unreachable,
+  # no-central-main, local) or Porelo's (host-answer-refused: <field/value>, host-command-failed). Absent
+  # otherwise.
+  centralWhy: ?string,
+  # Whether this machine, a host of the project, carries this repository: the host's file names
+  # it or carries the project whole, and its forge keeps a copy. A start on one it does not carry
+  # is refused. Absent on a machine that is no host of the project.
+  carriedHere: ?bool,
+  # The project's hostState/hostWhy while it waits or cannot be read. Otherwise the repository's
+  # own progress when published: taken, waiting, not-carried, held or no-central; a legacy project
+  # progress without repository progress uses carried. Unknown states refuse the whole publication.
+  # Placement is always necessary: host progress can only withhold carriedHere, never grant it.
+  hostState: ?string,
+  hostWhy: ?string,
+  # The project's tasks on this repository, running or stopped; a task naming no repository counts
+  # on the project's own. A task of a repository the file no longer names counts on the project
+  # alone.
+  tasks: int,
+  # How many of those are up.
+  running: int,
   # Everything a task on this repository may reach, each saying which block granted it: always the
   # project's, since what a task may reach is the project's alone.
   egress: []Grant,
@@ -2183,6 +3187,31 @@ type ProjectFileKey (
 # beginning 'mail.transports.<scheme>: '. A transport that does not offer the check leaves its section open.
 method CheckProjectFile(text: string) -> (refused: []string, refusedHere: []string, warnings: []string)
 
+# The model a start on the project would run on for each provider this machine knows, when the start
+# names none: the repository's porelo.yml's for that provider, else project.yml's
+# (providers.<provider>.model), else the agent's own default. So New work shows it before starting.
+# A file that does not read, or names a provider this machine does not know, is Failed, as Start
+# refuses it.
+method ProviderModels(
+  # Project NAME, as Start takes it.
+  project: string,
+  # The repository the task would be for, as Start takes it. Omitted, project.yml alone answers.
+  repository: ?string
+) -> (models: []ProviderModel)
+
+# One provider's model, as a start that names none settles it.
+type ProviderModel (
+  # The provider, by the name Providers reports.
+  provider: string,
+  # The model's id. "" when nothing names one, and the agent runs on its own default.
+  model: string,
+  # What a person is shown for it, as the file that named it gives it. "" when it gives none: a
+  # repository's model takes no label from project.yml's.
+  label: string,
+  # "repository", "project", or "agent" when nothing names one.
+  from: string
+)
+
 # The deploy key could not be had: no upstream a key can be for, or the vault is locked.
 error DeployKeyRefused(message: string)
 
@@ -2191,7 +3220,7 @@ error DeployKeyRefused(message: string)
 # An error rather than an empty answer, for the same reason NoSuchTask is one: a caller that asked
 # about something that is not there has a wrong argument, and reporting it as "nothing to do" lets
 # that wrong argument arrive as a legitimate result.
-# The acting person may not do this; 'message' says why.
+# The acting person, or the task on its own socket, may not do this; 'message' says why.
 error NotAllowed(message: string)
 
 error NoSuchProject(project: string)
@@ -2614,6 +3643,11 @@ type Credential (
   # What goes with the secret and is not secret - a client id, a token URL, scopes - by name.
   # Configuration, shown whole; never a secret.
   settings: [string]string,
+  # True when nothing Porelo holds ends the secret it attaches, so a leak of it does not decay: an
+  # entry with no expires_at setting, or a grant held as an access token that never expires. Never
+  # for a renewable sign-in, an entry with expires_at, or a grant renewed by a refresh token, nor
+  # for a grant nobody has granted yet.
+  noExpiry: bool,
   # For an entry a person grants (oauth-device, oauth-code): who granted it and when, or absent while
   # nobody has. The grant itself is never shown.
   grant: ?Authorization
@@ -2806,8 +3840,8 @@ method CredentialReplace(
 # A vault entry was not removed or replaced, and nothing changed. Never carries any part of a value.
 #
 # reason is NO_VAULT, VAULT_LOCKED (the vault is shut: nothing held opens it, and the daemon has no
-# terminal to ask at), NO_SUCH_CREDENTIAL, RESERVED (a task's or a grant's own entry, which
-# Credentials never lists), GRANTED, BORROWED (a running task holds it until it stops; tasks names
+# terminal to ask at), NO_SUCH_CREDENTIAL, RESERVED (a task's, a grant's or a transport's own entry,
+# or a host's identity, which Credentials never lists), GRANTED, BORROWED (a running task holds it until it stops; tasks names
 # them), NO_VALUE or VALUE_UNREADABLE (a private key this machine cannot sign with).
 error CredentialRefused(reason: string, name: string, tasks: []string)
 
@@ -2911,6 +3945,104 @@ method ImportCredential(
   source: string,
   # Why it failed, or a warning about what was stored - a credential that looks like a
   # placeholder, or one a task will refuse. "" when there is nothing to say.
+  detail: string
+)
+
+# ---------------------------------------------------------------------------- carrying to a host
+
+# Makes a key for one vault entry carried to this machine, sealed: the first of three calls that
+# copy an entry from the person's machine to a host's vault without the value crossing the window
+# between them.
+#
+# The private half stays in this daemon's memory until one entry opens with it or five minutes have
+# passed; an ended key opens nothing and is dropped at the next call. A few live at once, a newer
+# one ending the oldest. Nothing is written.
+method CredentialReceiver() -> (
+  # READY, or VAULT_LOCKED: no key is made for a vault that could not store what it receives.
+  outcome: string,
+  # The public half, 32 bytes base64. "" unless READY.
+  key: string,
+  # When the key ends, an instant. "" unless READY.
+  until: string
+)
+
+# Seals one entry of this machine's vault, or a sign-in an agent holds on this machine, to a key
+# CredentialReceiver made on another machine.
+#
+# The answer holds ciphertext only that machine's daemon opens, and only under this name and kind:
+# a window carries it from one daemon to the other at once and must not keep or log it.
+#
+# Give either name or agent and provider. An agent's sign-in is read from the agent's own file as
+# ImportCredential reads it and sealed under the name and kind that import would store it under, so
+# the host keeps it where its tasks look; this machine's vault is neither opened nor written, and a
+# shut one does not matter.
+method SealCredential(
+  # The receiving key, as CredentialReceiver answered it.
+  key: string,
+  # The vault entry to seal, by name. Omit to seal an agent's sign-in.
+  name: ?string,
+  # The agent whose sign-in to seal, as ImportCredential takes it. Omit when only one is installed
+  # and a provider is given.
+  agent: ?string,
+  # The provider whose sign-in to seal, as ImportCredential takes it. Omit for the one the agent
+  # answers.
+  provider: ?string,
+  # Where the agent keeps its sign-in. Omit for what the agent declares.
+  configDirectory: ?string
+) -> (
+  # SEALED, NO_SUCH_ENTRY, RESERVED (a name Porelo keeps for itself, such as a task's entry or a
+  # host's identity, which Credentials never lists and nothing carries), VAULT_LOCKED, BAD_KEY (not a 32-byte X25519 public key) or TOO_LARGE
+  # (sealed, more than 1 MiB, which no receiver opens). For an agent's sign-in also, as
+  # ImportCredential answers them: NO_SUCH_AGENT, NO_CONFIG_DIRECTORY, NOTHING_TO_IMPORT (the agent
+  # holds no sign-in here; the ordinary case, not a fault), WRONG_PROVIDER or FAILED; FAILED too
+  # when both name and agent or provider are given. Never VAULT_LOCKED for a sign-in.
+  outcome: string,
+  # The sealed entry, base64. "" unless SEALED.
+  sealed: string,
+  # The entry's name, as it is to be stored there: for a sign-in the vault key ImportCredential
+  # would store it under. "" for a sign-in that was not read; once read, named even when the seal
+  # then fails (BAD_KEY, TOO_LARGE).
+  name: string,
+  # The entry's kind, "" for none; ReceiveCredential needs it back unchanged.
+  kind: string,
+  # Why it was not sealed. "" when sealed. Never the value.
+  detail: string
+)
+
+# One sign-in an installed agent holds on this machine, by name only.
+type ImportableCredential (
+  # The agent, as Agents names it.
+  agent: string,
+  # The provider it is for, as Providers names it; "" for an agent that is not brokered.
+  provider: string,
+  # Its kind, "" for none.
+  kind: string
+)
+
+# The sign-ins the installed agents hold on this machine, which ImportCredential would store and
+# SealCredential would carry: for each agent, each provider it can drive whose sign-in its own file
+# holds, or the one it answers when it is not brokered. Read from the agents' files, so a shut vault
+# does not matter; names only, never a value. Each agent is asked once per provider, so this is not
+# cheap.
+method ImportableCredentials() -> (rows: []ImportableCredential)
+
+# Opens an entry SealCredential sealed to one of this daemon's live keys and stores it in this
+# machine's vault. The key it opened with ends.
+method ReceiveCredential(
+  # As SealCredential answered it.
+  sealed: string,
+  # The name to store it under, as SealCredential answered it; another name does not open.
+  name: string,
+  # The kind, as SealCredential answered it; another kind does not open.
+  kind: string,
+  # Whether an entry of that name already here is replaced.
+  replace: bool
+) -> (
+  # STORED, EXISTS (kept, as replace was false), RESERVED (a name Porelo keeps for itself, never
+  # stored by a carry), VAULT_LOCKED, NO_RECEIVER (no live key: used or
+  # past five minutes) or REFUSED (sealed to another key, or for another name or kind).
+  outcome: string,
+  # Why it was not stored. "" when stored. Never the value.
   detail: string
 )
 
@@ -3049,7 +4181,9 @@ method Destination(name: string) -> (destination: Destination)
 # Declares a destination in the user's own directory, taking the place of a packaged one of the same name.
 #
 # With dryRun, nothing is written and the answer says what would be: the destination as it would be read
-# back, or the refusal - a name that is not one, an upstream that is not https, no header.
+# back, or the refusal - a name that is not one, an upstream that is not https, no header. An upstream may
+# also be 'unix:<path>', an endpoint on this host, taken only for a socket directly in
+# $XDG_RUNTIME_DIR/porelo/mcp with no symbolic link on its path.
 method WriteDestination(
   name: string,
   label: ?string,
@@ -3113,6 +4247,272 @@ error OtherVaultKey()
 # The vault contains passphrase or other slots; host-key unlock and reset are refused.
 error NotAHostVault()
 
+# ---------------------------------------------------------------------------- host identities
+
+# A host's identity: the keys a rented host is given again at each later rental, so that it is the
+# same host to the central forge and to every machine that pinned its host keys. The person's vault
+# keeps one entry per host, encrypted like every entry, under the reserved name
+# host-identity/<host>; 'porelo vault put' and 'porelo vault remove', CredentialReplace,
+# CredentialRemove, SealCredential and ReceiveCredential refuse that name, Credentials never lists
+# it, and 'porelo vault clear' names each of its keys as left at the central forge.
+#
+# Only the person's own socket reaches these methods: a task's socket never does, whatever its list
+# says. A shut vault answers VaultLocked. A value is checked whole when it is kept and its fields
+# again on every read, and a refusal is org.varlink.service.InvalidParameter naming the field, such
+# as identity.repositories[0].key_id, never any part of a key; a field the shape does not know is
+# named by where it is, such as 'identity.repositories[0]: an unknown field', never by its name.
+
+# One key: an OpenSSH public key line, 'ssh-ed25519 AAAA... comment', and its private half.
+type HostIdentityKey (
+  public: string,
+  # One unencrypted OpenSSH private key whose public half is public. Absent in HostIdentityPublic.
+  private: ?string
+)
+
+# A repository's read key, registered at the central forge as the project's migration registered it.
+type HostIdentityRepository (
+  # The project, as the host names it.
+  project: string,
+  # The repository at the central forge.
+  repository: string,
+  # Its address at the central forge, https or ssh and without a credential, at the organization's
+  # own forge.
+  address: string,
+  # The deploy key's id at the central forge, above 0.
+  key_id: int,
+  # 'porelo host <host> project <project>', exactly.
+  title: string,
+  public: string,
+  # As HostIdentityKey's private.
+  private: ?string
+)
+
+# One of the host's SSH host keys.
+type HostIdentitySshKey (
+  # ed25519, ecdsa or rsa, the key's own algorithm; each at most once.
+  type: string,
+  public: string,
+  # As HostIdentityKey's private.
+  private: ?string
+)
+
+# A host's identity, at most 256 KiB written as JSON. Unknown fields are refused, and no text holds
+# a control character but the line breaks of a private key.
+type HostIdentity (
+  # The host, as its card names it; the same as the call's host.
+  host: string,
+  # The organization's read key, registered at the central forge as 'porelo host read key
+  # <fingerprint>'.
+  organization: HostIdentityKey,
+  # At most 256, each project's repository once.
+  repositories: []HostIdentityRepository,
+  # One to three, one of each type.
+  ssh_host_keys: []HostIdentitySshKey
+)
+
+# Keeps a host's identity in this machine's vault, after the host's first setup and again before
+# each 'down', as the host has carried more repositories. Refused with HostIdentityNotReadOnAHost by
+# a host's own daemon. Each public half is derived from its private key here, once; a read checks
+# the kept value's fields again and derives nothing.
+#
+# Without replace, an identity already kept is replaced only by one with the same organization key,
+# the same host keys and every kept repository unchanged, which may add repositories; anything else
+# is HostIdentityExists and nothing changes. The window asks the person before replace.
+method HostIdentityKeep(
+  # The host, as its card names it.
+  host: string,
+  identity: HostIdentity,
+  # Replaces whatever is kept for the host.
+  replace: ?bool
+) -> ()
+
+# The whole identity, private halves included, for the moment it is piped into the host's setup.
+# Refused with HostIdentityNotReadOnAHost by a host's own daemon, whose vault is not the person's.
+method HostIdentityRead(host: string) -> (identity: HostIdentity)
+
+# The identity without any private field, for pinning a host's keys and showing what it carries.
+method HostIdentityPublic(host: string) -> (identity: HostIdentity)
+
+# The hosts whose identity the vault keeps, sorted.
+method HostIdentities() -> (hosts: []string)
+
+# The vault keeps no identity for this host.
+error HostIdentityUnknown(host: string)
+
+# The vault keeps another identity for this host: another organization key or host key, or a kept
+# repository dropped or changed. Nothing changed; keep it with replace at the person's word.
+error HostIdentityExists(host: string)
+
+# This daemon's vault is a host's: the private halves of a host's identity are kept in and read
+# from the person's own vault alone, so HostIdentityKeep and HostIdentityRead are refused here.
+error HostIdentityNotReadOnAHost()
+# The person's gathered release of approved host main, using the same flow as porelo host push.
+# Omitted or empty repositories select all from the person's checked push configuration, in order.
+# Reads <forge>.central from this account's vault; refreshes <forge>.person through the existing
+# checked sudo -n host issuer. Never prompts, reads a passphrase, opens askpass or adds a privilege.
+# With more, progress contains only repository and stage: reading, pushing, pushed, up-to-date.
+# Without more, only the final result is sent. The final reply lists confirmed pushed and unchanged
+# repositories separately. NothingToPush means every selected main was already up to date.
+# Stops on the first refusal. Error lists retain confirmed earlier completions; later repositories
+# were not attempted. CentralPushUncertain means a started write may have completed: inspect before retry.
+# A non-fast-forward brings central main to local central/main for a task merge and approval.
+# Each Git process has a ten-minute deadline; streaming disconnect stops Git and later repositories.
+# A one-shot caller may finish sending while still reading; its request is bounded by those deadlines.
+# Issuance and transfer hold the account's forge-token lock, including against the CLI token issuer.
+# No Git or issuer text, URL, credential or credential fragment is returned. Never offered through MCP:
+# releasing to central is a person's judgment. The window offers this action; its button is a client concern.
+method PushToCentral(project: string, repositories: ?[]string) -> (
+  repository: ?string,
+  stage: ?string,
+  pushed: ?[]string,
+  upToDate: ?[]string
+)
+
+# No process ran. unlock is init, passphrase, host or device; unlockCommand is an available command,
+# or empty for the enrolled device flow. A host command's <host> is filled in by the person's client.
+error CentralVaultShut(unlock: string, unlockCommand: []string)
+
+# No usable central credential exists at this exact vault key; no process ran.
+error MissingCentralToken(credential: string, storeCommand: []string)
+
+# Central refused authentication; forge and status carry checked HTTP evidence when available.
+# Every selected receive endpoint is checked before any push, including public repositories.
+# storeCommand is empty: this refusal never asks for a replacement token. No Git prompt text.
+error CentralTokenRefused(credential: string, storeCommand: []string, repository: string, pushed: []string, upToDate: []string, forge: ?string, status: ?int)
+
+# Every selected repository was confirmed unchanged, rather than newly pushed.
+error NothingToPush(pushed: []string, upToDate: []string)
+
+# The existing noninteractive issuer could not supply a local token, or another transfer holds its lock.
+# reason is issuer or busy. Check the host's existing sudo rule; the daemon will not ask a password.
+error HostPushTokenUnavailable(reason: string, storeCommand: []string)
+
+# The central write was refused. reason is central-refused or reconcile; branch is central/main for
+# reconciliation, otherwise empty. Merge and approve central/main in a task before trying again.
+error CentralPushRefused(repository: string, reason: string, branch: string, pushed: []string, upToDate: []string)
+
+# A started write timed out, was interrupted or lost its connection; its remote outcome is unknown.
+error CentralPushUncertain(repository: string, pushed: []string, upToDate: []string)
+
+# Host trust/preflight or local transfer failed. reason is selection, account, settings, program,
+# configuration, authority, vault, transfer or unexpected. Repair the named category before retrying.
+# code is the corresponding host command exit code, never a process diagnostic.
+error HostPushRefused(reason: string, code: int, repository: string, pushed: []string, upToDate: []string)
+
+
+# A host forge review, observed with this account's person token.
+type HostPullRequest (
+  # The repository key in project.yml, not the forge's display name.
+  repository: string,
+  number: int,
+  # Outside text for plain-text display: controls and line separators removed, at most 1000 code points.
+  title: string,
+  # A full 40- or 64-digit lowercase hexadecimal commit id.
+  head: string,
+  # Makers of exactly head, read from the local mirror or the head fetched from the host's forge
+  # into Porelo's own store, never from the forge's user fields.
+  # Author, committer and each trailer are shown text cut to 1000 code points.
+  author: string,
+  committer: string,
+  # At most 50 Assisted-by and Co-Authored-By trailers, unfolded by git.
+  trailers: []string,
+  # open, merged or closed. These are observations, not signature or approval judgments.
+  state: string
+)
+
+# A carried repository whose reviews could not be read this round while the others' were.
+type HostPullRequestRefusal (
+  # The repository key in project.yml.
+  repository: string,
+  # forge-access (403 or 404: its copy is not made yet or the person is not admitted), forge (any
+  # other status), or not-carried (an earlier row of a repository the host no longer carries).
+  reason: string,
+  # The forge's HTTP status; absent when the forge was not asked.
+  status: ?int,
+  # The path asked, as /api/v1/repos/<copy>/pulls or /pulls/<n>: never the host's address or query.
+  path: ?string,
+  # Porelo's words with the status, the path and what to do; never the forge's words or the token.
+  message: string
+)
+
+# Reads open reviews the daemon account's person token can see in this project's carried repositories.
+# Uses <name>.person from the vault, with name and git_port from the checked root-owned forge settings.
+# Takes an unplaced carried project once before reading, checking its signed project file as a start does.
+# Missing mirror heads are fetched from their loopback copies into the reader's own state store.
+# The person token reaches git only in its environment; redirects stay off and the gate mirror is never written.
+# Every page of every carried repository is read, as far as the forge says the list goes: a page shorter
+# than asked is no end; a Link header without a rel="next" page, or failing that X-Total-Count, is. A forge
+# that says neither is read to its first empty page. One HTTP answer may hold 32 MiB.
+# A bound is a refusal, never a truncated successful list.
+# HTTP has no proxy or redirects, connects within 10 seconds and answers within 20 seconds.
+# Each git maker query has a 10-second deadline and a 64 KiB output limit.
+# A review fetch is shallow, with 20 seconds per git command and a 32 MiB pack/file limit.
+# refused, present only when a repository was refused, names each; the other repositories still answer.
+# A reply fits one message: when the rows do not, pullRequests and ended hold their first rows, paged says how
+# many there are, and PullRequestsPage gives the rest of this same reading. Absent when every row is here.
+method PullRequests(project: string) -> (pullRequests: []HostPullRequest, ended: []HostPullRequest, refused: ?[]HostPullRequestRefusal, paged: ?PullRequestsPaged)
+
+# How much of a PullRequests reading or a WatchPullRequests snapshot there is when its reply holds only the
+# first rows.
+type PullRequestsPaged (
+  # Names the reading, which the daemon keeps ten minutes for PullRequestsPage: 32 lowercase hexadecimal digits.
+  reading: string,
+  # How many rows the reading holds in pullRequests and in ended.
+  pullRequests: int,
+  ended: int,
+  # Where the next page starts, as PullRequestsPage.from.
+  next: int
+)
+
+# The rest of a PullRequests reading or a WatchPullRequests snapshot that did not fit its reply, page by page:
+# positions run through pullRequests and then ended, so putting the pages after the first reply gives each list
+# whole, in its order, every row once. Each page fits one message.
+method PullRequestsPage(
+  project: string,
+  # PullRequests.paged.reading or WatchPullRequests.paged.reading.
+  reading: string,
+  # paged.next, or a page's next. A position at or past the reading's last row, or below 0, answers
+  # InvalidParameter naming from.
+  from: int
+) -> (
+  pullRequests: []HostPullRequest,
+  ended: []HostPullRequest,
+  # Where the next page starts; absent when this page ends the reading.
+  next: ?int
+)
+
+# The reading is not kept: ten minutes have passed since PullRequests or a watch answered it, later readings
+# took its place, the daemon started again, or it is no reading of this project. The client asks PullRequests
+# again, or takes the watch's newer snapshot.
+error PullRequestsReadingGone(project: string, reading: string)
+
+# Without more, one snapshot as PullRequests. With more, an initial snapshot (including empty), then
+# changed snapshots, polling five seconds after each completed round; rounds never overlap.
+# Takes the project once before the first round, never on subsequent rounds.
+# pullRequests is the whole current open list. ended contains each previously observed review that
+# was explicitly confirmed merged or closed, once per transition. Its terminal event ends that row,
+# not this watch. Reviews opened and ended entirely between polls need not be observed.
+# Absence alone, HTTP failure, lost access and missing maker objects never mean closed. A refused
+# repository's earlier rows are kept, neither open nor ended, until it answers again; a named error
+# ends the stream, and the client must treat its retained rows as stale and ask again. The stream ends only
+# on a named error of this method's own; PullRequestsReadingGone is only ever an answer to PullRequestsPage.
+# A snapshot that does not fit one message carries its first rows and paged, as PullRequests does: it is a
+# reading of its own, kept as PullRequests readings are, whose rest PullRequestsPage gives while the watch
+# goes on. A snapshot that fits carries no paged. A newer snapshot's reading may take an older one's place,
+# so a client still paging an older snapshot drops it for the newer.
+# None of PullRequests, PullRequestsPage and this method is offered to tasks through MCP: each spends or
+# hands out what the person's forge identity read.
+method WatchPullRequests(project: string) -> (pullRequests: []HostPullRequest, ended: []HostPullRequest, refused: ?[]HostPullRequestRefusal, paged: ?PullRequestsPaged)
+
+# No usable person token exists under the exact entry written by the command on this host.
+# storeCommand carries --if-forge, so it does nothing on a host without a forge.
+error MissingHostForgeToken(credential: string, storeCommand: []string)
+
+# Safe diagnostic with no forge or process output. Taking may refuse with its project reason.
+# Read reasons: settings, vault-unreadable, not-carried,
+# forge-token (the forge answered 401: renew the token), forge, forge-answer, makers, bounds. Unlock/repair an unreadable vault before retrying; missing is distinct.
+error HostPullRequestsRefused(reason: string, message: string)
+
 # A push waiting at the gate for a decision.
 type PendingPush (
   # Ref name under refs/porelo/incoming/, which is what Review, Approve and Reject take.
@@ -3132,7 +4532,40 @@ type PendingPush (
   fetch: string,
   # Whether the upstream already has this work: somebody pushed it there by hand, past the gate, as the last
   # measurement of the upstream found. Reject refuses it without 'force'. Absent from a daemon before this field.
-  alreadyUpstream: ?bool
+  alreadyUpstream: ?bool,
+  # Who made the head commit, "name <email>" as git has them, and its message's trailer lines, unfolded, as git
+  # reads them ("Assisted-by: ..."). Shown as they come, never judged here. Absent from a daemon before these
+  # fields, for a ref that is not a commit, and when the ref has moved past `commit`. Each is cut at 1000 code
+  # points, and at most 50 trailers are given.
+  author: ?string,
+  committer: ?string,
+  trailers: ?[]string,
+  # The head commit's whole message, cut at 16384 code points: a Co-Authored-By outside git's trailer block is
+  # in no trailer line, and is here. Absent where author is, and when git's answer could not be matched to
+  # the commit.
+  message: ?string,
+  # What the gate decided when this commit arrived, as the account's event log records it: "accepted" when the
+  # task's certificate judged it, "accepted, unsigned" when the task has none and nothing could judge it. A
+  # checker's verdict, never the task's word. Absent when no arrival of this commit is recorded, and from a
+  # daemon before this field.
+  # Text for a person, shown and not parsed: today "accepted" or "accepted, unsigned", and an open set.
+  arrival: ?string
+)
+
+# One commit of a pending push, with who made it.
+type ReviewCommit (
+  # In full.
+  commit: string,
+  # First line of the message.
+  subject: string,
+  # "name <email>", as git has them.
+  author: string,
+  committer: string,
+  # The message's trailer lines, unfolded, as git reads them; empty when it has none. Subject, author, committer
+  # and each trailer are cut at 1000 code points, and at most 50 trailers are given.
+  trailers: []string,
+  # The whole message, cut at 16384 code points; "" when git's answer could not be matched to each commit.
+  message: string
 )
 
 # One file a pending push changes, as a person should meet it in a review.
@@ -3218,27 +4651,107 @@ method Review(
   repository: ?string,
   # Ref name, from PendingPush.name.
   name: string,
-  # What to diff against. Default: the task's recorded starting branch, or the mirror's HEAD for older tasks.
+  # What to diff against. Default: the task's recorded starting branch, or the mirror's HEAD for older tasks;
+  # with none in the mirror, the whole history to the commit. A named ref or commit the mirror does not hold
+  # is refused as Failed, never taken as no base.
   against: ?string,
   # Ignore whitespace at line endings in the diff (git --ignore-space-at-eol). Default: false.
   # Counts, file ranking and log are unchanged by this switch.
   ignoreLineEndings: ?bool
 ) -> (
+  # The full commit whose evidence is returned, for Approve.commit. Absent from older daemons.
+  commit: ?string,
   # Unified diff, in the order of files: the dangerous first, reformatting and generated files last.
   diff: string,
-  # Commit log over the same range.
+  # Commit log over the same range: every commit it lists is in diff and files.
   log: string,
+  # The same commits, newest first, each with who made it. Absent from a daemon before this field.
+  commits: ?[]ReviewCommit,
   # What the push changes, ranked; the diff shows them in this order.
   files: []ReviewFile,
   # What the task that pushed this was asked, to show before the files - never compared with them.
   # "" when it was started without an instruction; absent when the task is gone from this machine.
-  asked: ?string
+  asked: ?string,
+  # What the gate decided when the waiting commit arrived, as PendingPush.arrival says it. Absent when no
+  # arrival of it is recorded, and from a daemon before this field.
+  # Text for a person, shown and not parsed: today "accepted" or "accepted, unsigned", and an open set.
+  arrival: ?string,
+  # Present when diff is not the whole patch: the reply would not fit one message. diff then ends at a file
+  # boundary and never holds part of a file. files, their ranks and log stay whole; the ranking was made
+  # from the whole change. Absent when diff is whole, and from a daemon before this field.
+  cut: ?ReviewCut,
+  # Present when files, commits, log or diff holds only its first page; ReviewPage gives the rest. Absent
+  # when all of it is here.
+  paged: ?ReviewPaged
 )
 
+# Where a Review's diff was cut to fit one message.
+type ReviewCut (
+  # Files whose patch is in diff, and files whose patch is not.
+  shownFiles: int,
+  omittedFiles: int,
+  # The omitted files' paths, in the diff's order: each is in Review.files with its rank.
+  omitted: []string,
+  # The command that prints the whole review, patch included, on the daemon's machine.
+  command: []string
+)
+
+# How much of a Review there is when a part of it holds only its first page; ReviewPage gives the rest.
+type ReviewPaged (
+  # Each part's whole size: entries for files and commits, UTF-8 bytes for log and diff.
+  files: int,
+  commits: int,
+  logBytes: int,
+  diffBytes: int,
+  # Each part's next page, as ReviewPage.from; absent where Review already holds all of that part.
+  filesNext: ?int,
+  commitsNext: ?int,
+  logNext: ?int,
+  diffNext: ?int,
+  # The full base commit Review resolved and read against, "" for the whole history: ReviewPage.against.
+  base: string
+)
+
+# The rest of a Review that did not fit its reply, page by page, for the commit that Review answered. Pages of
+# files and commits are in Review's own order, so putting them together gives the list Review would have given
+# whole. Each page fits one message.
+method ReviewPage(
+  project: string,
+  upstream: ?string,
+  repository: ?string,
+  name: string,
+  # Review.commit; refused as MovedSinceReview when the push has moved since, so every page is of one commit.
+  commit: string,
+  # Review.paged.base: the pages are of <against>..<commit>, the whole history to commit when "". Never a
+  # default resolved again, so a base that moved since Review cannot change the pages; anything but "" or a
+  # full commit is refused as InvalidParameter naming against.
+  against: string,
+  # As Review was asked with it.
+  ignoreLineEndings: bool,
+  # "files", "commits", "log" or "diff"; another is refused as InvalidParameter naming part.
+  part: string,
+  # Where this page starts: Review.paged's next for the part, or a page's next. A position the daemon did not
+  # give - past the part's end, or not at the start of an entry, a line, or for diff a file - is refused as
+  # InvalidParameter naming from.
+  from: int
+) -> (
+  # The one that matches part; the others absent.
+  files: ?[]ReviewFile,
+  commits: ?[]ReviewCommit,
+  text: ?string,
+  # Where this part's next page starts; absent when this page ends it.
+  next: ?int
+)
+
+# Review's file list, commits and log alone do not fit one message: nothing is sent rather than a list a
+# person would take for the whole. bytes is what that reply would take; command prints the whole review
+# on the daemon's machine.
+error ReviewTooLarge(name: string, bytes: int, limit: int, command: []string)
+
 # Forwards a pending push upstream. The only call in this interface that sends anything
-# anywhere, and it makes the caller name the branch rather than inferring one - except in a project
-# with a branch block, where the task's own recorded branch is used, or on the host's own forge,
-# where porelo/<task> is the default. On that forge approval opens or reuses a pull request with
+# anywhere. Without a branch named it goes to the task's branch - porelo/<task> unless the task's start
+# named another - on every upstream, the host's own forge or a plain git remote alike; the starting
+# branch only when named. On the host's own forge approval opens or reuses a pull request with
 # the task's token, targeting the repository's default branch. If the API refuses, Failed says
 # the push happened and why the forge refused; the approval stays pending for a retry.
 method Approve(
@@ -3247,10 +4760,10 @@ method Approve(
   # Which repository of the project. Default: the project's own.
   repository: ?string,
   name: string,
-  # Branch to push to. On the host's forge, omitted means porelo/<task> without a branch block.
-  # Elsewhere required in a project without a branch block (BranchRequired otherwise). In a
-  # project with one, empty means the task's own branch (Task.forgeBranch), and a named one must match its
-  # branch.pattern, or the answer is BranchRefused.
+  # Branch to push to. Omitted or empty means the task's own branch (Task.forgeBranch), porelo/<task> for
+  # work whose task is no longer recorded; BranchRequired when neither is known. In a project with a branch
+  # block the task's must be recorded, and a named one must match its branch.pattern, or the answer is
+  # BranchRefused.
   branch: ?string,
   # Merge the work onto the branch as a commit signed with the signing key the daemon's user has configured
   # in git (user.signingkey; gpg.format ssh for an ssh key), and push that, rather than pushing the work as
@@ -3259,8 +4772,9 @@ method Approve(
   # Failed when the merge cannot be made or comes out unsigned. From the daemon an ssh-agent is reached only
   # if its socket is in the daemon's environment; 'porelo gate approve --signed' in a terminal always is.
   signed: ?bool,
-  # The commit the person reviewed, as Pending answers it. Refused as MovedSinceReview when the push has moved since,
-  # so what goes is what was read; the task's gate stays up during a review. Empty: whatever it holds now.
+  # The full lowercase 40- or 64-digit commit the person reviewed, as Review.commit answers it.
+  # Optional on the wire for compatibility; omitted or blank is refused as CommitNotNamed.
+  # Refused as MovedSinceReview when the push has moved since, so what goes is what was read.
   # Refused as BranchExists when 'branch' holds work the commit did not grow from, unless its head
   # is, on the host's forge, the last commit this gate forwarded for this task; that head is then
   # replaced with a lease.
@@ -3282,8 +4796,8 @@ method PendingBundle(
   # Which repository of the project. Default: the project's own.
   repository: ?string,
   name: string,
-  # The branch it is to be merged onto. Default: the recorded starting branch (main for older tasks); with a branch block, the task's own
-  # branch, and a named one must match its branch.pattern (BranchRefused otherwise).
+  # The branch it is to be merged onto. Default: the task's own branch, as Approve chooses it; with a branch
+  # block, a named one must match its branch.pattern (BranchRefused otherwise).
   branch: ?string
 ) -> (
   # The bundle, base64.
@@ -3321,12 +4835,20 @@ method Reject(project: string, upstream: ?string, repository: ?string, name: str
 # Reject was asked to discard a push the upstream already has, and was not given 'force': nothing was discarded.
 error AlreadyUpstream(name: string)
 
-# Approve was given the commit the person reviewed, and the push has moved since: nothing was
-# forwarded. Review it again (now is what it holds) and approve that.
+# Approve was given the commit the person reviewed, and the push has moved since - before the call, or
+# while a signed approval fetched the upstream: nothing was forwarded. Review it again (now is what it
+# holds) and approve that. Comment and Reply are refused the same way, and keep nothing; ReviewSummary
+# too, and counts nothing.
 error MovedSinceReview(name: string, reviewed: string, now: string)
 
-# Approve was called without a branch to push to, in a project with no branch block - or in one with
-# a block, for a task whose branch was not recorded.
+# No approval was attempted. waiting is the full commit that waits now and could be forwarded; a name
+# nothing waits under, or a gate that forwards nothing, is refused as Failed instead, with what does wait.
+# Review that revision before making a new authenticated Approve call with its commit.
+# SARIF verdicts, suppressions, baselines and empty findings never authorize forwarding.
+error CommitNotNamed(name: string, waiting: string)
+
+# Approve was called without a branch to push to, and the task's own is not known: in a project with a
+# branch block, not recorded; without one, not recorded and the pending push's name is no task's.
 error BranchRequired(name: string)
 
 # Approve or PendingBundle named a branch the project's branch.pattern does not accept, so the forge's
@@ -3337,6 +4859,327 @@ error BranchRefused(branch: string, pattern: string)
 # nothing was pushed. 'at' is the commit the branch holds. Approve onto another branch, such as the next free
 # '<branch>-2'; never a force over it, since it can be somebody's reviewed work.
 error BranchExists(branch: string, at: string)
+
+# Opens a comment thread on lines of a waiting push, as the owner account. Kept with the push and bound to
+# the task container that pushed it, so a later task of the same name inherits no thread. Never offered
+# through MCP: a task answers in a thread through its mailbox.
+method Comment(
+  project: string,
+  # Which repository of the project.
+  repository: string,
+  # Ref name, from PendingPush.name.
+  name: string,
+  # The full commit the caller reviewed, from Review.commit; a push that moved past it is refused as
+  # MovedSinceReview, since the lines would point into another change.
+  commit: string,
+  # The file's path in the repository, as Review.files names it.
+  path: string,
+  # old (the review's base) or new (the reviewed commit).
+  side: string,
+  # The lines on that side, counted from 1, both ends included; endLine is never before startLine.
+  startLine: int,
+  endLine: int,
+  # What the comment says, as plain text.
+  text: string,
+  # Lines proposed in place of startLine to endLine, on the new side only; "" proposes taking them out.
+  replacement: ?string,
+  # A retry id: the same id with the same comment answers the comment kept first, never a second one.
+  id: ?string
+) -> (
+  # The comment's own id, and the thread it opened.
+  guid: string,
+  thread: string
+)
+
+# Answers a thread of a waiting push, as the owner account; open or resolved, the thread keeps its state.
+method Reply(
+  project: string,
+  repository: string,
+  name: string,
+  # The full commit the caller reviewed; refused as MovedSinceReview when the push moved past it.
+  commit: string,
+  # The thread's id, as Comment or Comments gave it.
+  thread: string,
+  text: string,
+  # A retry id, as for Comment.
+  id: ?string
+) -> (
+  guid: string,
+  thread: string
+)
+
+# Every comment and reply of a waiting push, as SARIF in Porelo's profile, one page at a time, the oldest
+# thread first. Each item names its producer by channel: the owner account, or a task.
+method Comments(
+  project: string,
+  repository: string,
+  name: string,
+  # Where the page starts, from the last page's cursor; absent for the first.
+  cursor: ?string
+) -> (
+  # The SARIF document of this page.
+  sarif: string,
+  # Where the next page starts; absent after the last.
+  cursor: ?string
+)
+
+# Sets a thread of a waiting push resolved, or open again with reopen. Only the thread's state changes: it
+# clears no finding, changes no approval and approves nothing.
+method ResolveThread(
+  project: string,
+  repository: string,
+  name: string,
+  thread: string,
+  # Opens the thread again instead. Default: false.
+  reopen: ?bool
+) -> (
+  thread: string,
+  # open or resolved.
+  state: string
+)
+
+# How much of a waiting push's review is still open, as the daemon counts it, for whoever decides the push.
+# Never offered through MCP. Refused only as NoSuchPush or MovedSinceReview.
+method ReviewSummary(
+  project: string,
+  repository: string,
+  # Ref name, from PendingPush.name.
+  name: string,
+  # The full commit the caller reviewed; refused as MovedSinceReview when the push moved past it, so the
+  # counts are of the commit that was read.
+  commit: string
+) -> (
+  # Findings not yet answered.
+  openFindings: int,
+  # Threads still open; a resolved thread is not counted.
+  openThreads: int,
+  # Each run that reviewed the push; empty when none did, never a run made up.
+  runs: []ReviewRun
+)
+
+# One run that reviewed a push.
+type ReviewRun (
+  name: string,
+  # How completely it reviewed: complete, partial, failed or unknown.
+  completeness: string,
+  # How many findings it gave.
+  findings: int
+)
+
+# What is open at a place for one task, and the place's decision, read anew from the gate's records and
+# the forge's answer at each call; Porelo stores nothing for it and starts nothing. Every time is UTC,
+# RFC 3339, in whole seconds. Never offered through MCP. 'porelo review open --json' answers the same.
+# Refused as PlaceUnreadable, UnknownForge, NoPullRequest, for a pull request address the forge does not
+# know as NoSuchPullRequest, and as HeadNotInGate for a pull request whose head the asking task's gate never
+# forwarded; pullRequest or ownPullRequest without task is org.varlink.service.InvalidParameter.
+method ReviewOpen(
+  project: string,
+  place: Place,
+  # The task whose run asks; required for pullRequest and ownPullRequest, whose side and held items are its.
+  # Absent at a gate push it is the task that pushed. The answer follows that task's recorded parts.
+  task: ?string
+) -> (
+  # The commit reviewed at the place: at the gate the push's waiting head, on a pull request its head, for a
+  # MERGED one the head that merged. Absent when nothing stands there any more.
+  head: ?string,
+  # At the gate: OPEN while the push waits, RETURNED after a Reject that carried open threads, REJECTED
+  # after one that carried none, APPROVED when Approve forwarded it, LANDED when Landed found it merged
+  # elsewhere. On a pull request: OPEN, APPROVED (an approving review stands), MERGED, CLOSED (unmerged).
+  decision: (OPEN, RETURNED, REJECTED, LANDED, APPROVED, MERGED, CLOSED),
+  # The forwarded commit at the gate, the merge commit on a pull request; absent until one exists.
+  mergedCommit: ?string,
+  # The branch that commit went onto, at both places, such as "main"; absent with mergedCommit.
+  mergedHead: ?string,
+  # When the current decision began: at the gate when the push started waiting or when its Reject,
+  # Approve or Landed was recorded; on a pull request when it was merged or closed, and absent while
+  # it is OPEN or APPROVED, since the forge does not say when its head was pushed. Absent also when
+  # complete is false for a missing time.
+  decisionSince: ?string,
+  # Open threads whose last item is not the asking task's: at a gate push not written by that task, on a
+  # pull request not by the account its start recorded. Resolved threads and held items are none.
+  points: []OpenPoint,
+  # Findings no one answered, counted apart from points.
+  findings: int,
+  # Review items held back from the run at this place.
+  held: int,
+  # False when part of the answer could not be read; reason then says which part.
+  complete: bool,
+  # Why complete is false; absent when complete. TimeMissing: a forge answered no time for an item.
+  # JournalUnreadable: the review journal could not be read, so findings is 0. On a pull request also
+  # RateLimited (the forge asked to wait before every page was read), PagePartial (a page was cut short) and
+  # PageRefused (a page broke the review profile and was not read).
+  reason: ?string,
+  # A digest of this answer; equal versions are equal answers.
+  version: string
+)
+
+# An open thread, as ReviewOpen counts it.
+type OpenPoint (
+  thread: string,
+  # The file the thread is on; absent for a thread on the whole push.
+  path: ?string,
+  # The thread's first line on that file; absent with path.
+  line: ?int,
+  # Who wrote the thread's last item: "owner account", "task <id>", or the forge's login.
+  lastBy: string,
+  # When the thread's last item was written. An item written before items carried a time reads as
+  # the time its push started waiting.
+  lastAt: string
+)
+
+# A pull request address the forge does not know; nothing was made.
+error NoSuchPullRequest(url: string)
+
+# A pull request's head the asking task's gate never forwarded, so no comment on it can be judged; 'head' is
+# the commit looked for.
+error HeadNotInGate(head: string)
+
+# One review item held for the owner account's decision. Outgoing items come from a task's run and go to its
+# place once released; incoming items come from the place and reach the run once passed. Only undecided items
+# are listed.
+type HeldItem (
+  # The hold's id, which DecideItem names.
+  id: string,
+  # The task whose run it belongs to.
+  task: string,
+  # The place's name: a pull request's https address, or a gate push's "<repository>/<name>".
+  place: string,
+  direction: (outgoing, incoming),
+  # Where it goes: for an outgoing item the place, for an incoming one the task's run.
+  destination: string,
+  # What it does there: comment (opens a thread at a file's lines) or reply (answers a thread).
+  operation: (comment, reply),
+  # A comment's file, repository-relative; absent for a reply.
+  path: ?string,
+  # A comment's side: old (the base's file) or new (the reviewed commit's); absent for a reply.
+  side: ?(old, new),
+  # A comment's first and last line, inclusive, counted from 1; absent for a reply.
+  startLine: ?int,
+  endLine: ?int,
+  # The thread a reply answers, by its id at the place; absent for a comment.
+  thread: ?string,
+  # A comment's proposed replacement of its lines, exact and unescaped; absent when it has none.
+  suggestion: ?string,
+  # The commit the run pinned, in full; the item is written against it.
+  commit: string,
+  # The item's exact text, unescaped: what is released is exactly this.
+  text: string,
+  # SHA-256 of the item's content (operation, path, side, lines, thread, text, suggestion) in lowercase hex, as
+  # Porelo computes it; DecideItem names the digest it was shown, and a client never computes it.
+  digest: string,
+  # The name of the forge account that wrote an incoming item, such as "octocat", which a client shows as
+  # "forge account octocat"; absent for an outgoing one.
+  from: ?string,
+  # Absent: the item came through a message its task signed with its certified key. unsigned: no certified key
+  # of the task signed it, as for a reviewer task off a host. Only an outgoing item carries it.
+  mark: ?(unsigned),
+  # When it was held, UTC, RFC 3339, whole seconds.
+  at: string,
+  # The run's number at its place for its task, from 1.
+  run: int
+)
+
+# The undecided held items, oldest first, in pages. Never offered through MCP: the decision is the owner
+# account's. A cursor is refused as CursorRefused.
+method HeldItems(
+  # A task's name; absent lists every task's items on this machine.
+  task: ?string,
+  # From a previous answer's cursor; absent for the first page.
+  cursor: ?string
+) -> (
+  items: []HeldItem,
+  # The next page's cursor; absent on the last page.
+  cursor: ?string,
+  # Without a task: each entry of the hold store whose journal cannot be read, or that is no task's, by
+  # name; its items are left out and every other task's listed. Absent when every journal was read.
+  unreadable: ?[]string
+)
+
+# Decides one held item, if its content is still the one shown. release and refuse are for an outgoing item,
+# pass and dismiss for an incoming one; another is org.varlink.service.InvalidParameter. A refusal carries no
+# words for the task. The reply is empty; the item leaves HeldItems and Task.held. Never offered through MCP.
+method DecideItem(
+  task: string,
+  id: string,
+  # The digest the decider was shown.
+  digest: string,
+  decision: (release, refuse, pass, dismiss)
+) -> ()
+
+# No held item of that id for that task.
+error NoSuchItem(id: string)
+
+# The item's content is not the one its digest names; nothing was decided.
+error DigestChanged(id: string)
+
+# The item was decided before.
+error AlreadyDecided(id: string)
+
+# A later run of its task began at its place, so it can no longer be decided.
+error Lapsed(id: string)
+
+# A forge instance this machine knows. comments is EXTENDED (every comment through the message filter's
+# inbound check before a run sees it) or TRUSTED (format and size checks alone).
+type ForgeInstance (
+  # Its host, such as "github.com".
+  host: string,
+  # The forge adapter that reads it, such as "github".
+  adapter: string,
+  # EXTENDED or TRUSTED; absent when unreadable is set.
+  comments: ?string,
+  # Why this instance's entry could not be read; absent when it was.
+  unreadable: ?string
+)
+
+# The forge instances this machine knows, in the order they were added, and the names of the forge adapters
+# installed. Never offered through MCP.
+method Forges() -> (forges: []ForgeInstance, adapters: []string)
+
+# Adds a forge instance, or changes the adapter or comment reading of one. comments absent means EXTENDED,
+# also for a host that was TRUSTED, so a call that leaves it out only makes the reading stricter. adapter is
+# one of Forges' adapters, whose names are the forge kinds they serve. A host that is not a DNS name is
+# org.varlink.service.InvalidParameter. The reply is empty. Never offered through MCP: how a forge's words
+# reach a run is the owner account's choice.
+method ForgeSet(host: string, adapter: string, comments: ?(EXTENDED, TRUSTED)) -> ()
+
+# No forge adapter of that name is installed; nothing was changed.
+error AdapterNotInstalled(adapter: string)
+
+# The machine's forge file could not be read or written; reason is for a person. Nothing was changed.
+error ForgeFileUnreadable(reason: string)
+
+# Comment, Reply, Comments, ResolveThread or ReviewSummary named no push that waits, or one whose task
+# container is not recorded; nothing was kept.
+error NoSuchPush()
+
+# The comment's lines are not in that side's file, or are none: a side other than old or new, a startLine
+# before 1, an endLine before startLine.
+error AnchorOutsideBlob()
+
+# The comment's path is no regular file on that side; a link or a submodule is never followed.
+error NotARegularFile()
+
+# The replacement reaches past the comment's lines.
+error FixOutsideAnchor()
+
+# A replacement on the old side, which no commit could take.
+error OldSideFix()
+
+# A text broke a rule; rule names it, never the text itself: "empty" for a blank text, and a rule of the
+# path begins with "path: ", such as "path: empty".
+error TextRefused(rule: string)
+
+# A text or a range is over a limit; limit names it.
+error TooLarge(limit: string)
+
+# No thread of that id in this push, or none the caller may write in.
+error NoSuchThread()
+
+# A cursor no page of this push gave.
+error CursorRefused()
+
+# A retry id given before with another comment or reply; nothing was kept.
+error IdReused()
 
 # Tries one SSH identity without saving a credential or publishing work. Uses the existing mirror;
 # it never initializes or fetches one. source is AGENT (fingerprint or public key id) or FILE (path).
@@ -3352,9 +5195,12 @@ method CredentialTryPush(
   message: string
 )
 
-# Forwarding could not use the chosen SSH identity. No raw remote output is returned.
+# Forwarding could not use the chosen SSH identity, or the forge refused an https credential. No raw remote
+# output is returned.
 error PushRefused(
-  # NO_CREDENTIAL, KEY_UNAVAILABLE, or PUSH_REFUSED.
+  # NO_CREDENTIAL, KEY_UNAVAILABLE, or PUSH_REFUSED. Over https only PUSH_REFUSED: the forge refused the token or
+  # sign-in offered (source and id name it, "" when none was declared; fingerprint is ""), and message says what
+  # to do without repeating git or the server. Any other failed push is not this error.
   outcome: string,
   address: string,
   source: string,
@@ -3365,6 +5211,26 @@ error PushRefused(
   # A complete command for a person to start in a terminal, as arguments.
   command: []string,
   message: string
+)
+# Reads the host's complete published arrival ledger directly, without sudo or a network request.
+# project and repository name the host forge's copies; repository casing is folded to lowercase.
+# A task's MCP endpoint holds project to the task's own project. Reads
+# /etc/porelo-host/organization/arrivals/<project>/<repository>.jsonl, at most 16 MiB,
+# only as a regular root-owned file with root-owned directory ancestors, no symlinks,
+# and no group/other write permission on any component, as for published central state.
+# Missing, unreadable, unsafe, oversized or malformed data is cannot-say, never an empty history.
+# Historical judgements are returned unchanged; signatures are not verified again.
+# These are pre-receive judgements, not proof that the forge updated its refs.
+method Arrivals(project: string, repository: string) -> (
+  # read or cannot-say. An armed repository without commits still has an armed row.
+  state: string,
+  # host-file-unavailable for a missing/unreadable/unsafe file, host-answer-refused for malformed data or names.
+  why: ?string,
+  # Ledger order. Each row has verdict (accepted, migrated or armed) and arrived (UTC).
+  # accepted adds commit, ref and signer (kind, fingerprint, principal, certificate, signed_by);
+  # migrated adds commit; armed marks installation of the hook.
+  # Empty on cannot-say. An empty file is unavailable, never a successful empty history.
+  entries: []object
 )
 
 # An agent binary installed on this machine.
@@ -3389,6 +5255,15 @@ type Agent (
   foundProvider: string,
   # The paths found, its command on this account's PATH included.
   foundPaths: []string,
+  # How it was found SIGNED_IN where not by sign-in files of its own: "vault" when the vault
+  # holds the credential a start of it takes, for foundProvider, as the start judges it. Absent
+  # when its own sign-in files were found. A shut vault is CANNOT_SAY, never NOT_SIGNED_IN. A
+  # client starting this agent passes foundProvider as the start's provider: it may not be the default.
+  foundVia: ?string,
+  # The reasoning efforts this agent takes, in its definition's order, as Start's effort takes them.
+  # Empty for an agent whose definition declares none: it takes no effort. An older daemon omits it,
+  # and a client takes that as empty.
+  efforts: ?[]string,
   # Hosts this agent needs, added to a task's egress on top of the project's own.
   # How this agent logs itself in, as arguments to its own binary, and where that is described.
   #
@@ -3450,7 +5325,10 @@ type InstallArtifact (
   # one with a reason is a decision somebody made and can be shown as such.
   unverified: bool,
   # Why it cannot be verified. "" unless 'unverified'.
-  reason: string
+  reason: string,
+  # Who installs it: "root", before the agent's root steps, or "agent", as the agent's user.
+  # Absent, from a daemon older than the field, means "agent".
+  owner: ?string
 )
 
 # An installed agent binary that never runs: either an earlier location holds one of the same
@@ -3525,6 +5403,56 @@ type Provider (
   # and sending one as the other fails as an authentication error that looks like a wrong key.
   storeCommand: string
 )
+
+# The models a provider offers this machine, for a person to pick a start's model from.
+#
+# Asked of the provider with the credential the vault holds for it, at the path and in the shape its
+# provider file's 'models' section names (Anthropic's and OpenAI's model list, OpenRouter's with
+# each model's efforts), never with a key a caller hands over. A provider list wins, including an
+# empty one. Where it gives no list or the ask fails, the selected agent's declared models for
+# this provider answer instead. Without either list, "none" has no models.
+# A provider list is kept on this machine for an hour; a provider is asked at most once a minute,
+# one read at a time, and within that minute its last answer or failure is given again. The agent's
+# static list makes no request, needs no vault unlock, and is neither kept nor limited per minute;
+# it is available with a shut vault. Read-only: it starts no task and changes no file.
+method Models(
+  # The provider, by the name Providers reports.
+  provider: string,
+  # The agent the task would run, by Agents' name. Its declared models for this provider are used
+  # where the provider gives no list or the ask fails. Unknown is InvalidParameter; absent asks
+  # only the provider. An undeclared provider is ModelsFailed even if the agent names models for it.
+  agent: ?string,
+  # Asks the provider now rather than answering what was kept, unless it was asked within the last
+  # minute. Not honored from a task's MCP socket, which is answered what was kept.
+  fresh: ?bool
+) -> (
+  models: []Model,
+  # "provider" when the provider's list answered, "agent" for the selected agent's declared list
+  # for this provider, "none" when neither gives a list (then models is empty, and a client offers
+  # the model as text). A failed ask stays ModelsFailed when no matching agent list exists.
+  from: string,
+  # ISO-8601 time the list was read, or the static agent list was answered.
+  readAt: string
+)
+
+# One model a provider or the selected agent offers.
+type Model (
+  # The id Start's model takes.
+  id: string,
+  # What a person is shown: the provider's name for it (the id where it names none), or the
+  # agent's declared name when from is "agent".
+  label: string,
+  # The reasoning efforts the provider says the model takes, where it says; absent where it does
+  # not. Always absent for an agent list; a client then offers the agent's efforts.
+  efforts: ?[]string
+)
+
+# The provider was asked and did not answer with a list: refused the credential, unreachable, or an
+# answer that does not read, and the selected agent declares no models for this provider. A shut
+# vault without a matching agent list, or an undeclared provider, also fails. 'message' says which;
+# the vault's credential never appears in it. Never answered as an empty list, which would read as
+# "this provider offers nothing".
+error ModelsFailed(provider: string, message: string)
 
 # What this machine could install, from its own package source.
 #
@@ -3627,6 +5555,71 @@ type EcosystemFile (path: string, ownerOnly: bool)
 # The installed adapters could not be listed: detail names the directory.
 error EcosystemsNotListed(detail: string)
 
+# One installed agent's sign-in on this machine.
+type AgentSignIn (
+  # The agent, as Agents names it.
+  agent: string,
+  # Whether the vault holds the credential its sign-in makes, as a start reads it: SIGNED_IN,
+  # NOT_SIGNED_IN, VAULT_LOCKED (shut: unknown until it is opened, never missing) or CANNOT_SAY (its
+  # default provider cannot be used, so which credential a start needs is the start's choice).
+  state: string,
+  # The container of its sign-in that runs now, from a window or a terminal; "" while one is being
+  # prepared and has no container yet. Absent when none runs.
+  running: ?string
+)
+
+# Each installed agent's sign-in state, read from the vault once. A batch start asks this once and
+# signs in each agent that is NOT_SIGNED_IN, one after another, before it starts its tasks.
+method AgentSignIns() -> (signIns: []AgentSignIn)
+
+# Starts an agent's own login on this machine, at most one per agent: one already running - started
+# here or by 'porelo vault login' in a terminal - is answered instead, with started false.
+#
+# The login is no task. It runs detached, the agent's login in the foreground of the container's
+# terminal under a holding process that offers no shell and keeps the container until what the login
+# wrote is collected, on the machine's own network and with the credential being made inside it, so
+# List, Watch and Screen never see it. A window attaches to it with 'attach', run ON THAT MACHINE in a
+# terminal; closing that terminal ends only the watching, never the sign-in, which ends with the login or
+# at its 30-minute limit. The container is removed when the login ends. What the login makes is stored with
+# what opened the vault when it started, under the provider the agent's sign-in names.
+#
+# Returns once the container runs, which the first time includes building the login image; a second
+# call while one is being prepared returns once that one runs. A login nobody finishes within 30
+# minutes is stopped and removed.
+method AgentSignInStart(
+  # The agent, as Agents names it.
+  agent: string,
+  # Signs in although this machine's own agent directory holds a sign-in. Without it that is
+  # SignInRefused with ALREADY_SIGNED_IN, so the window offers ImportCredential first.
+  force: ?bool,
+  # Whether the person reaches this machine from another one. A LOOPBACK sign-in is then refused
+  # with LOOPBACK_OVER_SSH: its redirect to this machine cannot reach their browser.
+  remote: ?bool
+) -> (
+  # The login container, to attach to.
+  container: string,
+  # Whether this call started it.
+  started: bool,
+  # What to run on that machine to attach to the login.
+  attach: []string
+)
+
+# Waits until an agent's sign-in ends, at most 30 minutes, and answers whether the vault holds its
+# credential then - read from the vault, never from how the login exited. At once when none runs:
+# after one that ended here, with its result; otherwise with what the vault holds.
+method AgentSignInWait(agent: string) -> (
+  # Whether the vault holds the agent's credential now.
+  stored: bool,
+  # Why not: the sign-in's outcome (NOTHING_TO_COLLECT, FAILED, NO_PROVIDER, ...), VAULT_LOCKED,
+  # NOT_SIGNED_IN, CANNOT_SAY, NONE_RUNNING or TIMED_OUT; "" when stored.
+  reason: string
+)
+
+# A sign-in could not start. reason is NO_SUCH_AGENT, UNSUPPORTED (the agent declares no login),
+# LOOPBACK_OVER_SSH, NO_CONFIG_DIRECTORY, ALREADY_SIGNED_IN, VAULT_LOCKED (nothing could store what it
+# makes), or FAILED (the image or the container could not be made); detail says it in words.
+error SignInRefused(agent: string, reason: string, detail: string)
+
 # Someone who has joined a project's conversation.
 type MessageMember (
   # The name join was given.
@@ -3702,7 +5695,15 @@ method Talk() -> (
   # The peer it was going to or came from, or "".
   peer: string,
   # Why, for the events that have a why. "" otherwise.
-  detail: string
+  detail: string,
+  # This machine's own verdict on who sent it: "unsigned" when no certified key of a task signed it - one
+  # that arrived without a believed signature, or one its own task had no key to sign - "unverified" when
+  # its key is believed and nothing here verified the sending task's project, "" otherwise. Read from what
+  # the pass checked, never from the message; a sender that leaves a mark out is not certified by that.
+  # Absent from a daemon before this field.
+  # An open set: today "unsigned", "unverified" or "". A reader shows a value it does not know as given, never as
+  # trusted.
+  mark: ?string
 )
 
 # Every message a person may be asked to decide about, as it stands now - for an interface that
@@ -3739,7 +5740,12 @@ type HeldMessage (
   # "out" when this task was sending it, "in" when it was reaching this task - an external peer's
   # message is held on its way in, before any agent sees it. "" for a message held before the
   # record kept directions.
-  direction: string
+  direction: string,
+  # This machine's verdict on its sender when it held it, as TalkEvent.mark: "unsigned", "unverified" or "".
+  # Shown with the release action; never read from the message. Absent from a daemon before this field.
+  # An open set: today "unsigned", "unverified" or "". A reader shows a value it does not know as given, never as
+  # trusted.
+  mark: ?string
 )
 
 # Writes a person's own message into a conversation.
@@ -3816,7 +5822,12 @@ method ReadHeld(
   # "out" when this task was sending it, "in" when it was reaching this task - an external peer's
   # message is held on its way in, before any agent sees it. "" for a message held before the
   # record kept directions.
-  direction: string
+  direction: string,
+  # This machine's verdict on its sender when it held it, as TalkEvent.mark: "unsigned", "unverified" or "".
+  # Shown with the release action; never read from the message. Absent from a daemon before this field.
+  # An open set: today "unsigned", "unverified" or "". A reader shows a value it does not know as given, never as
+  # trusted.
+  mark: ?string
 )
 
 # Releases one held message, or refuses it for good - or, for one the filter refused, delivers it
@@ -3843,8 +5854,34 @@ method Release(
   message: string,
   # The message id, or "".
   id: string,
-  # Why, for NOT_DELIVERABLE. "" otherwise.
-  detail: string
+  # Why, in a sentence a person reads: for NOT_DELIVERABLE, and for a message held on its way in
+  # that RELEASED gave to this task. "" otherwise. Not a contract; code is.
+  detail: string,
+  # Which case, for NOT_DELIVERABLE only; absent for every other outcome.
+  code: ?NotDeliverable
+)
+
+# Why a release cannot go, beside Release's detail sentence, so a client says what to do for each
+# case without matching on the sentence. A client MUST render a value it does not know rather than
+# failing on it; this enumeration may gain entries.
+type NotDeliverable (
+  # Held from a task outside the project's conversation on its transport. Starting the task again
+  # enrols it; then the release goes.
+  NOT_IN_CONVERSATION,
+  # A person refused it for good, and the sender was told. Nothing sends it; the task writes anew.
+  REFUSED_BEFORE,
+  # The filter could not check it at all, so nobody here can say what a peer would read. Nothing
+  # sends it; the task writes anew.
+  UNCHECKED,
+  # The filter refused it, and it addresses nobody this host can send to. The task writes it anew
+  # to a peer.
+  NO_ADDRESSEE,
+  # The filter refused it, and the project may not address its peer. The project file names the
+  # peers a task may address.
+  PEER_NOT_ALLOWED,
+  # The filter refused it, and the signature the host made when it took the message in is not
+  # beside it, so it is not sent. The task writes it anew.
+  SIGNATURE_MISSING
 )
 
 # Holds a peer or releases it, for the whole project: every task of it, including tasks started later.
@@ -3867,7 +5904,10 @@ method Moderate(
 # Sets a project's conversation up on this machine, or confirms it, without starting a task: what binding a
 # machine to a project runs, so it learns the name this machine goes by there and whether it is let in yet.
 # Run again after a person let it in, and 'admitted' turns true. Refused with ConversationRefused, carrying
-# the transport's words and code.
+# the transport's words and code; for the project 'default', which talks to nobody, with code 78 and words
+# naming a project repository as the way, before any transport runs. A project a host carries for this
+# person and not taken here yet is taken first, as its first start would, so its room opens before any task;
+# a refused take answers ConversationRefused with code 69 and its words.
 method SetUpMessages(project: string) -> (messages: ProjectMessages)
 
 # Lets a person into a project's conversation with an account made for them, or gives it a new password
@@ -3886,7 +5926,10 @@ method JoinMessages(
 ) -> (
   transport: string,
   login: [string]string,
-  shown: string
+  shown: string,
+  # true when the person's existing account was invited into this room rather than made: the login has
+  # no password, and the person accepts the invitation in the client they use already.
+  invited: bool
 )
 
 # Lets another machine into a project's conversation on this machine's server. Answered once: the
@@ -3917,6 +5960,69 @@ method DismissMachine(
 
 # Who has joined a project's conversation, by the name join was given.
 method MessageMembers(project: string) -> (members: []MessageMember)
+
+# Reads the current room through its transport without setting it up or changing membership.
+# An existing empty room returns members: []; no configured or set-up room is NoRoom.
+# NoTransport means no installed transport offers members. HomeserverUnreachable is exit 75;
+# missing settings or secrets (78) and malformed answers (76) are ConversationRefused.
+# This operator-facing query is never offered through a task's MCP socket.
+# A transport's answer may hold 16 MiB, a reply one message of 4 MiB: when the members do not fit,
+# members holds the first of them, paged says how many there are, and RoomMembersPage gives the rest of
+# this same reading. Absent when every member is here.
+method RoomMembers(project: string) -> (room: string, members: []RoomMember, paged: ?RoomMembersPaged)
+
+# How much of a RoomMembers reading there is when its reply holds only the first members.
+type RoomMembersPaged (
+  # Names the reading, which the daemon keeps ten minutes for RoomMembersPage: 32 lowercase hexadecimal
+  # digits.
+  reading: string,
+  # How many members the reading holds.
+  members: int,
+  # Where the next page starts, as RoomMembersPage.from.
+  next: int
+)
+
+# The rest of a RoomMembers reading that did not fit its reply, page by page: putting the pages after the
+# first reply gives the members whole, in their order, each once. Each page fits one message. Never
+# offered through a task's MCP socket, as RoomMembers is not.
+method RoomMembersPage(
+  project: string,
+  # RoomMembers.paged.reading.
+  reading: string,
+  # paged.next, or a page's next. A position at or past the reading's last member, or below 0, answers
+  # InvalidParameter naming from.
+  from: int
+) -> (
+  members: []RoomMember,
+  # Where the next page starts; absent when this page ends the reading.
+  next: ?int
+)
+
+# The reading is not kept: ten minutes have passed since RoomMembers answered it, newer readings took its
+# place (the daemon keeps the 16 newest, at most 64 MiB of them together), the daemon started again, or it
+# is no reading of this project. The client asks RoomMembers again.
+error RoomMembersReadingGone(project: string, reading: string)
+
+# Transport claims for display, never authority to deliver a message or act on a task.
+type RoomMember (
+  # The account's id in the room.
+  id: string,
+  # The name the room shows for it.
+  shown: string,
+  # join or invite.
+  state: string,
+  # task, person, helper or other. An other member is never taken as a task.
+  kind: string,
+  # Present only for a task recorded on this machine as belonging to the requested project.
+  # On a shared server only this account's own task members are included.
+  task: ?string
+)
+
+error NoTransport(project: string, transport: string)
+
+error NoRoom(project: string)
+
+error HomeserverUnreachable(project: string, transport: string, message: string, code: int)
 
 # Removes a joined person; user is empty when nothing remained, why explains a kept account.
 method RemoveMessageMember(project: string, person: string) -> (user: string, kept: bool, why: string)
@@ -4029,6 +6135,50 @@ type LeftLoose (
   reason: string
 )
 
+# The four factors this machine's time limits follow, from limits: in the account's config.yml, as
+# porelod read it at its start. A client passes line on unchanged as --limits to a Porelo program it
+# starts, and applies the factors to its own limits; what it starts before it can ask uses the factors
+# it last read from this machine, or all four at 1.0. Read once per connection.
+method Limits() -> (
+  # The limits line, all four in the order services, machines, polling, retries, each with at least
+  # one digit after its dot: services=1.0,machines=1.0,polling=1.0,retries=1.0
+  line: string,
+  services: float,
+  machines: float,
+  polling: float,
+  retries: float
+)
+
+# The person's own decisions about how long something holds, from the account's config.yml as porelod
+# read it at its start: whole days, each 1 to 3650, never multiplied by a time factor.
+method AccountSettings() -> (
+  # How long the person's certification of a task holds (task.certificate_days, 7).
+  certificateDays: int,
+  # How long a card holds from the day it is made (identity.card_days, 30).
+  cardDays: int,
+  # How many days before its end a card is said to be due (identity.renew_notice_days, 7).
+  renewNoticeDays: int,
+  # How long a sent message is asked about (messages.asked_about_days, 7).
+  askedAboutDays: int,
+  # How long a task's run records are kept (records.kept_days, 30).
+  keptDays: int
+)
+
+# Which methods an MCP client may be offered as tools, as porelo-mcp asks for them. Each name is a
+# method's name without the interface, as a tool is named.
+#
+# reading, never and judgement are Porelo's, named one by one and never guessed from a name.
+# writing is the person's own list in $XDG_CONFIG_HOME/porelo/mcp-writing, one method per line
+# with '#' starting a comment, less any name in never or reading and any this interface lacks.
+# A client offers reading and writing; it refuses never itself as well, so a fault on one side
+# alone opens nothing. A judgement method is offered only from the list, and the client says so.
+method McpMethods() -> (
+  reading: []string,
+  writing: []string,
+  never: []string,
+  judgement: []string
+)
+
 # The account's event log: every security-relevant event of this node - an approval or rejection,
 # a clearance at run time, a hand-in, a credential a start gave, a project file applied, every task
 # stopped at once - one line each, hash-chained, and each line's hash anchored in the user's systemd
@@ -4042,8 +6192,9 @@ method Events(
 type Event (
   # When it was recorded, ISO-8601.
   at: string,
-  # approved, rejected, clearance, hand-in, credential, project-applied or stopped-all; unreadable for
-  # a line that cannot be read, its other fields "".
+  # approved, rejected, clearance, hand-in, credential, project-applied, stopped-all, arrived or
+  # started; unreadable for a line that cannot be read, its other fields "". started is a task another
+  # task started through its MCP endpoint: task is the one started, detail names the parent.
   kind: string,
   # The project, or "".
   project: string,

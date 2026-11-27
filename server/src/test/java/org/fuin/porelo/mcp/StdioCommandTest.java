@@ -22,10 +22,6 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class StdioCommandTest {
 
-    static final String MCP_METHODS =
-            "\n# The sets for a person's own client.\n"
-                    + "method McpMethods() -> (reading: []string, writing: []string, never: []string, judgement: []string)\n";
-
     @TempDir Path directory;
 
     // Harm: a destructive method reaching an agent because the daemon's writing set named it by
@@ -279,8 +275,7 @@ class StdioCommandTest {
             Path place = java.nio.file.Files.createTempDirectory(directory, "broken");
             Map<String, VarlinkServer.Method> methods =
                     Map.of("McpMethods", (parameters, replies) -> replies.last(each));
-            try (var daemon =
-                    new StandInDaemon(place, StandInDaemon.tasks1() + MCP_METHODS, methods)) {
+            try (var daemon = new StandInDaemon(place, StandInDaemon.tasks1(), methods)) {
                 Ran ran = run(daemon, request(1, "tools/list", Map.of()));
 
                 assertThat(toolNames(ran.answers.get(0))).as("no tools for %s", each).isEmpty();
@@ -306,7 +301,7 @@ class StdioCommandTest {
             throws IOException {
         Map<String, VarlinkServer.Method> methods = new java.util.HashMap<>(more);
         methods.put("McpMethods", (parameters, replies) -> replies.last(sets));
-        return new StandInDaemon(directory, StandInDaemon.tasks1() + MCP_METHODS, methods);
+        return new StandInDaemon(directory, StandInDaemon.tasks1(), methods);
     }
 
     @SuppressWarnings("unchecked")

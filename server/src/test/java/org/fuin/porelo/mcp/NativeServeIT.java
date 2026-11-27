@@ -93,11 +93,7 @@ class NativeServeIT {
                                                 java.util.List.of(),
                                                 java.util.List.of("Panic"),
                                                 java.util.List.of())));
-        try (var daemon =
-                new StandInDaemon(
-                        directory,
-                        StandInDaemon.tasks1() + StdioCommandTest.MCP_METHODS,
-                        methods)) {
+        try (var daemon = new StandInDaemon(directory, StandInDaemon.tasks1(), methods)) {
             Process process =
                     new ProcessBuilder(
                                     executable(),

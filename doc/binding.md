@@ -28,7 +28,8 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 ## The daemon socket
 
 - `--daemon-socket` is a Varlink socket `porelod` opens for this one process, bound to the task. It serves only the
-  methods the signed project file allows and takes the caller from the socket it is reached on, never from a field.
+  methods the task's start grants, bounded by the `mcp` section of the signed project file, and takes the caller from
+  the socket it is reached on, never from a field.
 - Its `org.varlink.service.GetInterfaceDescription` for `org.fuin.porelo.Tasks1` is the interface cut down to those
   methods. It keeps every type and every error, so it parses as a complete interface, and an error a remaining method
   raises is always declared.

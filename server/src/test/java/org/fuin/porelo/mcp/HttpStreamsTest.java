@@ -326,9 +326,7 @@ class HttpStreamsTest {
                 StdioCommandTest.sets(
                         List.of("List", "Tail", "Watch"), List.of(), List.of(), List.of());
         all.put("McpMethods", (parameters, replies) -> replies.last(sets));
-        daemon =
-                new StandInDaemon(
-                        directory, StandInDaemon.tasks1() + StdioCommandTest.MCP_METHODS, all);
+        daemon = new StandInDaemon(directory, StandInDaemon.tasks1(), all);
         socket = directory.resolve("task.sock");
         McpSession session =
                 new McpSession(
