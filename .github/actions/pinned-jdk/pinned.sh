@@ -11,8 +11,8 @@
 # off. A 4xx, a refused certificate and a full disk are not tried again at the same source, and a wrong digest fails
 # at once. A file is checked against its sha256
 # after every fetch and before it is taken from a cache. What the functions say goes to standard error.
-# A file the first source does not serve - a 5xx or no answer past 600 s, a 4xx, anything but a wrong digest - is
-# fetched from the organization's Artifactory, pinned_mirror, by its digest and name:
+# A file the first source does not serve in 3 attempts within 600 s - a 5xx or no answer, a 4xx, a wrong digest - is
+# fetched at once from the organization's Artifactory, pinned_mirror, by its digest and name:
 # <mirror>/pinned/<sha256>/<file name>, without a token, until the 900 s are spent, and taken only when its digest
 # matches. PORELO_PINNED_MIRROR names another mirror, an https address, or none when it is set empty; without a mirror
 # the first source has the whole 900 s. An attempt runs no longer than its source's deadline leaves, at least 30 s.
@@ -23,6 +23,7 @@
 
 pinned_attempts=8
 pinned_first_deadline=600
+pinned_first_attempts=3
 pinned_mirror=https://fuinorg.jfrog.io/artifactory/porelo-files
 
 pinned_now() { # whole seconds on a clock that only counts up; a test replaces it
@@ -101,10 +102,11 @@ pinned_fetch() { # <url> <sha256> <file>: the file the url serves, checked, or t
 pinned_from() { # <only|first|mirror> <url> <sha256> <file> <start>: one source tried by the rule until its deadline;
     # 0 when the file is in place, 1 on a fault no other source mends, 2 when this source did not serve it
     local role=$1 url=$2 sha256=$3 file=$4 start=$5 attempt=1 deadline=900 level=error part code exit wait elapsed \
-        answer next most
+        answer next most attempts=$pinned_attempts
     case $role in
         first)
             deadline=$pinned_first_deadline
+            attempts=$pinned_first_attempts
             level=warning
             ;;
     esac
@@ -134,7 +136,9 @@ pinned_from() { # <only|first|mirror> <url> <sha256> <file> <start>: one source 
             0:200)
                 if [ "$(pinned_sha256 "$part")" != "$sha256" ]; then
                     rm -f "$part"
-                    echo "::error::$url has the digest of something else, not the pinned $sha256" >&2
+                    echo "::$level::$url has the digest of something else, not the pinned $sha256" >&2
+                    # The mirror's copy is checked by the same digest, so a first source's wrong file gives way to it.
+                    [ "$role" = first ] && return 2
                     return 1
                 fi
                 mv -f "$part" "$file" || { rm -f "$part"; return 1; }
@@ -151,12 +155,12 @@ pinned_from() { # <only|first|mirror> <url> <sha256> <file> <start>: one source 
         esac
         rm -f "$part"
         elapsed=$(($(pinned_now) - start))
-        if ! wait=$(pinned_pause "$attempt" "$elapsed" "$deadline"); then
+        if [ "$attempt" -ge "$attempts" ] || ! wait=$(pinned_pause "$attempt" "$elapsed" "$deadline"); then
             echo "::$level::$url answered HTTP ${code:-000} (curl exit $exit); given up after $attempt of at most" \
-                "$pinned_attempts attempts in $elapsed s" >&2
+                "$attempts attempts in $elapsed s" >&2
             return 2
         fi
-        echo "::warning::$url answered HTTP ${code:-000} (curl exit $exit) on attempt $attempt of $pinned_attempts;" \
+        echo "::warning::$url answered HTTP ${code:-000} (curl exit $exit) on attempt $attempt of $attempts;" \
             "trying again in $wait s" >&2
         sleep "$wait"
         attempt=$((attempt + 1))
