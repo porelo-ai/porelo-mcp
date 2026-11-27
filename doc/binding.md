@@ -151,10 +151,12 @@ client may use either.
   is in its progress notifications.
 - At most 64 streams run at once in one stdio session or on one task's socket, and only one per request id; one more, or a second one under an
   id still streaming, is refused at once with JSON-RPC error `-32600`. When standard output fails, every stream ends.
-- Over a task's socket such a call is answered `200` with `Content-Type: text/event-stream` as soon as the stream
-  starts: each message, the progress and then the result, one `data:` line and an empty line, and the connection's end
-  the stream's end. The connection's deadline bounds the request and the taking of a single answer, not a stream. A client that
-  closes the connection - or only its sending half, which MCP clients do not do - has cancelled the stream;
+- Over a task's socket such a call is answered `200` with `Content-Type: text/event-stream` and
+  `Transfer-Encoding: chunked` as soon as the stream starts: each message, the progress and then the result, one
+  `data:` line and an empty line in a chunk of its own, and the stream's end the last chunk, after which the connection
+  closes. A stream cancelled, or whose client is gone, ends without the last chunk. The connection's deadline bounds
+  the request, the taking of a single answer and of the last chunk, not a stream. A client that closes the
+  connection - or only its sending half, which MCP clients do not do - has cancelled the stream;
   `notifications/cancelled` on another connection cancels it by its request id, and closes its connection, so a write
   the client no longer reads is let go. A cancel that comes a moment, up to 10 seconds, before the call it names ends
   that call as it starts. The bound of 64 and one stream per id hold for the whole socket. A client whose `Accept`

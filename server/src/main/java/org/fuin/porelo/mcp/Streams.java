@@ -26,6 +26,7 @@ final class Streams implements AutoCloseable {
     private final Runnable onStart;
     private final Runnable onCancel;
     private final Set<Cancellation> here = ConcurrentHashMap.newKeySet();
+    private final Set<Cancellation> every = ConcurrentHashMap.newKeySet();
     private final Set<Thread> threads = ConcurrentHashMap.newKeySet();
     private volatile boolean started;
 
@@ -130,6 +131,7 @@ final class Streams implements AutoCloseable {
             return false;
         }
         here.add(cancellation);
+        every.add(cancellation);
         cancellation.onCancel(onCancel);
         if (!started) {
             started = true;
@@ -165,6 +167,16 @@ final class Streams implements AutoCloseable {
     /** Cancels every call started here and still running, without waiting. */
     void cancelAll() {
         here.forEach(Cancellation::cancel);
+    }
+
+    /**
+     * Tells whether a call started here was cancelled, even one whose cancel is still running its
+     * actions: it says so the moment the call can see it.
+     *
+     * @return {@code true} once any call here was cancelled.
+     */
+    boolean cancelledAny() {
+        return every.stream().anyMatch(Cancellation::cancelled);
     }
 
     /**

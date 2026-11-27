@@ -263,6 +263,13 @@ public final class McpHttpServer implements AutoCloseable {
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 streams.cancelAll();
+                return true;
+            }
+            // The last chunk goes to a client that takes it, within the deadline; a cancelled
+            // stream gets none, though its cancel may still be closing the connection.
+            armDeadline.run();
+            if (!streams.cancelledAny()) {
+                events.end();
             }
             return true;
         }
@@ -331,10 +338,13 @@ public final class McpHttpServer implements AutoCloseable {
     }
 
     /**
-     * An answer as server-sent events: its head written with the first event, each message one
-     * {@code data:} line and an empty line, and the connection's end its end.
+     * An answer as server-sent events in chunks, which porelo's gateway needs to frame it: its head
+     * written with the first event, each message one {@code data:} line and an empty line in a
+     * chunk of its own, and the last chunk its end.
      */
     private static final class EventStream {
+
+        private static final byte[] CRLF = {'\r', '\n'};
 
         private final OutputStream out;
         private boolean headWritten;
@@ -352,6 +362,7 @@ public final class McpHttpServer implements AutoCloseable {
             try {
                 out.write(
                         ("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
+                                        + "Transfer-Encoding: chunked\r\n"
                                         + "Cache-Control: no-store\r\nConnection: close\r\n\r\n")
                                 .getBytes(StandardCharsets.US_ASCII));
                 out.flush();
@@ -364,11 +375,27 @@ public final class McpHttpServer implements AutoCloseable {
             head();
             try {
                 // Json.write escapes every line break inside a string, so one message is one line.
-                out.write(("data: " + json + "\n\n").getBytes(StandardCharsets.UTF_8));
+                final byte[] event = ("data: " + json + "\n\n").getBytes(StandardCharsets.UTF_8);
+                out.write(
+                        (Integer.toHexString(event.length) + "\r\n")
+                                .getBytes(StandardCharsets.US_ASCII));
+                out.write(event);
+                out.write(CRLF);
                 out.flush();
                 return true;
             } catch (IOException ex) {
                 return false;
+            }
+        }
+
+        /** Writes the last chunk, so the stream ends framed; a client already gone is let go. */
+        synchronized void end() {
+            head();
+            try {
+                out.write("0\r\n\r\n".getBytes(StandardCharsets.US_ASCII));
+                out.flush();
+            } catch (IOException ex) {
+                // The client is gone; there is nobody to end it for.
             }
         }
     }

@@ -56,9 +56,10 @@ images with the pinned GraalVM and `-march=x86-64`:
   - the token checked once the head is read and before anything else, so a request without it gets `401` whatever its
     path or method; then a path other than `/mcp` gets `404`, and a method other than `POST` gets `405`;
   - an answer as `application/json`, or, for a call with a progress token from a client that takes it, as
-    `text/event-stream` until the stream ends or the client closes the connection, which cancels it; the deadline
-    bounds the request and a single answer, not a stream; the stream holds one of the 64 places while it runs, and
-    what arrives beyond the request meanwhile is read away up to 64 KiB.
+    `text/event-stream` in chunks, ended by the last chunk, until the stream ends or the client closes the connection,
+    which cancels it; the chunks frame it, since porelo's gateway refuses an answer without a length or chunks; the
+    deadline bounds the request, a single answer and the last chunk, not a stream; the stream holds one of the 64
+    places while it runs, and what arrives beyond the request meanwhile is read away up to 64 KiB.
 - A number must travel exactly as it came: the JSON-RPC `id` back to the client, an `int` argument on to the daemon.
   `Json.parse` reads every number as a double and writes `2` back as `2.0`; `Json.parseDecimals`, from `porelo-wire`
   0.5.1 on, reads it as a `BigDecimal` and writes `2`. The layer reads with `parseDecimals`.

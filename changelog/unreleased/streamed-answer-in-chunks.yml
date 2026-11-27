@@ -1,0 +1,2 @@
+title: 'A streamed answer over a task''s socket goes out in chunks, ended by its last chunk, so Porelo''s gateway can frame it; without a length or chunks the gateway refused every streamed call with a 502.'
+type: fixed

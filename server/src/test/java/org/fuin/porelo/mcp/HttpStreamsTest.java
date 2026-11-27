@@ -77,10 +77,11 @@ class HttpStreamsTest {
             send(client, call(1, "Tail", "p-1"), true);
             InputStream in = Channels.newInputStream(client);
             String head = head(in);
-            Map<String, Object> first = event(in);
+            InputStream body = new Dechunked(in);
+            Map<String, Object> first = event(body);
             seen.countDown();
-            Map<String, Object> second = event(in);
-            Map<String, Object> answer = event(in);
+            Map<String, Object> second = event(body);
+            Map<String, Object> answer = event(body);
 
             assertThat(head)
                     .as("an event stream")
@@ -96,7 +97,31 @@ class HttpStreamsTest {
             assertThat(((Map<?, ?>) answer.get("result")).get("structuredContent"))
                     .as("the result, last")
                     .isEqualTo(Map.of("line", "two"));
-            assertThat(in.read()).as("then the connection ends").isEqualTo(-1);
+            assertThat(body.read()).as("then the stream's last chunk").isEqualTo(-1);
+            assertThat(in.read()).as("and the connection ends").isEqualTo(-1);
+        }
+    }
+
+    // Harm: porelo's gateway refuses an answer that declares neither a length nor chunks, so an
+    // agent in a task gets a 502 for every streamed call.
+    @Test
+    void aStreamedAnswerIsFramedInChunksAndEndedByTheLastOne() throws Exception {
+        start(Map.of("Tail", (parameters, replies) -> replies.last(Map.of("line", "only"))));
+
+        try (SocketChannel client = connect()) {
+            send(client, call(1, "Tail", "p-1"), true);
+            InputStream in = Channels.newInputStream(client);
+            String head = head(in);
+            InputStream body = new Dechunked(in);
+            event(body);
+            event(body);
+
+            assertThat(head)
+                    .as("chunks, and no length beside them")
+                    .containsIgnoringCase("\r\nTransfer-Encoding: chunked\r\n")
+                    .doesNotContainIgnoringCase("Content-Length");
+            assertThat(body.read()).as("the last chunk after the result").isEqualTo(-1);
+            assertThat(in.read()).as("nothing after it").isEqualTo(-1);
         }
     }
 
@@ -133,7 +158,7 @@ class HttpStreamsTest {
             send(client, call(1, "Watch", "w"), true);
             InputStream in = Channels.newInputStream(client);
             head(in);
-            event(in);
+            event(new Dechunked(in));
         }
 
         assertThat(gone.await(10, TimeUnit.SECONDS)).as("the daemon's call ended").isTrue();
@@ -149,7 +174,7 @@ class HttpStreamsTest {
             send(client, call(7, "Watch", "w"), true);
             InputStream in = Channels.newInputStream(client);
             head(in);
-            event(in);
+            event(new Dechunked(in));
             String cancelled;
             try (SocketChannel other = connect()) {
                 send(
@@ -224,7 +249,7 @@ class HttpStreamsTest {
             send(first, call(9, "Watch", "a"), true);
             InputStream in = Channels.newInputStream(first);
             head(in);
-            event(in);
+            event(new Dechunked(in));
             send(second, call(9, "Watch", "b"), true);
             String refused =
                     new String(
@@ -308,9 +333,10 @@ class HttpStreamsTest {
             send(client, call(1, "Tail", "p"), true);
             InputStream in = Channels.newInputStream(client);
             head(in);
+            InputStream body = new Dechunked(in);
             List<Map<String, Object>> events = new ArrayList<>();
             for (int i = 0; i < 3; i++) {
-                events.add(event(in));
+                events.add(event(body));
             }
 
             assertThat(((Map<?, ?>) events.getLast().get("result")).get("structuredContent"))
@@ -451,5 +477,53 @@ class HttpStreamsTest {
                         new String(
                                 text.substring(6).getBytes(StandardCharsets.ISO_8859_1),
                                 StandardCharsets.UTF_8));
+    }
+
+    /**
+     * A chunked body as RFC 9112 frames it and porelo's gateway reads it: each chunk a size in hex,
+     * its bytes and a line end, the last of size 0 and an empty line. Anything else fails.
+     */
+    private static final class Dechunked extends InputStream {
+
+        private final InputStream in;
+        private int left;
+        private boolean ended;
+
+        Dechunked(InputStream in) {
+            this.in = in;
+        }
+
+        @Override
+        public int read() throws IOException {
+            if (ended) {
+                return -1;
+            }
+            if (left == 0) {
+                String size = line();
+                assertThat(size).as("a chunk's size in hex").matches("[0-9a-fA-F]{1,8}");
+                left = Integer.parseInt(size, 16);
+                if (left == 0) {
+                    assertThat(line()).as("no trailer after the last chunk").isEmpty();
+                    ended = true;
+                    return -1;
+                }
+            }
+            int b = in.read();
+            assertThat(b).as("a chunk's byte before the end").isNotEqualTo(-1);
+            if (--left == 0) {
+                assertThat(line()).as("a chunk's line end").isEmpty();
+            }
+            return b;
+        }
+
+        private String line() throws IOException {
+            StringBuilder line = new StringBuilder();
+            while (!line.toString().endsWith("\r\n")) {
+                int b = in.read();
+                assertThat(b).as("a line before the end: %s", line).isNotEqualTo(-1);
+                line.append((char) b);
+            }
+            return line.substring(0, line.length() - 2);
+        }
     }
 }
