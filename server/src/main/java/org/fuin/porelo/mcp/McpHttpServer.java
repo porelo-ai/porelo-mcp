@@ -15,6 +15,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import org.fuin.porelo.wire.Json;
@@ -161,22 +162,21 @@ public final class McpHttpServer implements AutoCloseable {
             // Another user's process gets no answer at all, not even a refusal to learn from.
             return;
         }
-        final var timeout =
-                closer.schedule(
-                        () -> closeQuietly(client), deadline.toMillis(), TimeUnit.MILLISECONDS);
+        final Deadline timeout = new Deadline(() -> closeQuietly(client));
         try {
             final boolean streamed =
                     answer(
                             Channels.newInputStream(client),
                             Channels.newOutputStream(client),
-                            () -> timeout.cancel(false),
+                            timeout::end,
+                            timeout::arm,
                             () -> closeQuietly(client));
             client.shutdownOutput();
             if (!streamed) {
                 discardArrived(client);
             }
         } finally {
-            timeout.cancel(false);
+            timeout.end();
         }
     }
 
@@ -186,7 +186,11 @@ public final class McpHttpServer implements AutoCloseable {
      * @return {@code true} when it was answered as a stream, whose watcher still reads the input.
      */
     private boolean answer(
-            InputStream in, OutputStream out, Runnable endDeadline, Runnable closeClient)
+            InputStream in,
+            OutputStream out,
+            Runnable endDeadline,
+            Runnable armDeadline,
+            Runnable closeClient)
             throws IOException {
         final HttpRequestHead head;
         try {
@@ -230,11 +234,12 @@ public final class McpHttpServer implements AutoCloseable {
                         events::head,
                         // A cancel also lets go of a write the client no longer reads.
                         closeClient);
+        // The deadline bounds the client: its request, and below its taking of the answer. How long
+        // the daemon works on a call is the daemon's to bound.
+        endDeadline.run();
         final String answered = session.handle(message, streams);
         if (streams.started()) {
-            // The deadline bounds the request and a single answer; a stream runs until it ends or
-            // is cancelled.
-            endDeadline.run();
+            // A stream runs until it ends or is cancelled.
             // A client that closes its end - or half-closes it, which MCP clients do not - has
             // stopped the stream. Bytes beyond the request are read away, up to a bound.
             Thread.ofVirtual()
@@ -261,12 +266,37 @@ public final class McpHttpServer implements AutoCloseable {
             }
             return true;
         }
+        armDeadline.run();
         if (answered == null) {
             respond(out, 202, null);
         } else {
             respond(out, era.modern() && Era.refusesTheRequest(answered) ? 400 : 200, answered);
         }
         return false;
+    }
+
+    /**
+     * A connection's deadline, armed while the client sends or takes, never while the daemon works.
+     */
+    private final class Deadline {
+
+        private final Runnable expired;
+
+        private ScheduledFuture<?> pending;
+
+        Deadline(Runnable expired) {
+            this.expired = expired;
+            this.pending = closer.schedule(expired, deadline.toMillis(), TimeUnit.MILLISECONDS);
+        }
+
+        synchronized void end() {
+            pending.cancel(false);
+        }
+
+        synchronized void arm() {
+            pending.cancel(false);
+            pending = closer.schedule(expired, deadline.toMillis(), TimeUnit.MILLISECONDS);
+        }
     }
 
     /**

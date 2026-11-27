@@ -319,6 +319,34 @@ class HttpStreamsTest {
         }
     }
 
+    // Harm: a call the daemon takes longer to answer than the connection's deadline closed without
+    // a byte, which the task's gateway reports as a broken destination.
+    @Test
+    void theConnectionsDeadlineDoesNotCutACallWhileTheDaemonWorks() throws Exception {
+        start(
+                Map.of(
+                        "Tail",
+                        (parameters, replies) -> {
+                            try {
+                                Thread.sleep(1_500);
+                            } catch (InterruptedException ex) {
+                                Thread.currentThread().interrupt();
+                            }
+                            replies.last(Map.of("line", "later"));
+                        }));
+
+        try (SocketChannel client = connect()) {
+            send(client, call(1, "Tail", "p"), false);
+            InputStream in = Channels.newInputStream(client);
+            String answer = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+
+            assertThat(answer)
+                    .as("one JSON answer after the 800 ms deadline, not a closed connection")
+                    .startsWith("HTTP/1.1 200")
+                    .contains("\"line\":\"later\"");
+        }
+    }
+
     private void start(Map<String, VarlinkServer.Method> methods) throws Exception {
         Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
         Map<String, VarlinkServer.Method> all = new java.util.HashMap<>(methods);

@@ -1,0 +1,2 @@
+title: 'A task''s call the daemon takes longer than 30 seconds to answer is answered when the daemon answers, no longer closed without a byte at the connection''s deadline, which now bounds only the client''s sending of its request and taking of the answer.'
+type: fixed

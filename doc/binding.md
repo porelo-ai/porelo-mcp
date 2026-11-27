@@ -15,9 +15,11 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
   task before a start or a resume.
 - `--task` only names the process in its log and in `task status`. It is never sent to the daemon and carries no right.
 - `--limits` is the limits line of porelo's `doc/limits.md`, read by `LimitFactors` of `porelo-wire`. Each
-  connection's deadline is 30 seconds times `services`; no other time limit here follows a factor. Without the option
-  all four are 1.0. A refused line exits 64 with `porelo-mcp: --limits: <what is wrong>` on standard error before
-  anything else is done; the option without a value, or given twice, is a wrong argument and exits 2.
+  connection's deadline is 30 seconds times `services`, for the client to send its request and, apart, to take its
+  answer; it never runs while the daemon works on a call, which only the daemon bounds. No other time limit here
+  follows a factor. Without the option all four are 1.0. A refused line exits 64 with `porelo-mcp: --limits: <what is
+  wrong>` on standard error before anything else is done; the option without a value, or given twice, is a wrong
+  argument and exits 2.
 - The start goes in this order, and nothing of a later step happens when an earlier one failed:
   1. the arguments are read;
   2. the token is read from standard input;
@@ -151,7 +153,7 @@ client may use either.
   id still streaming, is refused at once with JSON-RPC error `-32600`. When standard output fails, every stream ends.
 - Over a task's socket such a call is answered `200` with `Content-Type: text/event-stream` as soon as the stream
   starts: each message, the progress and then the result, one `data:` line and an empty line, and the connection's end
-  the stream's end. The connection's deadline bounds the request and a single answer, not a stream. A client that
+  the stream's end. The connection's deadline bounds the request and the taking of a single answer, not a stream. A client that
   closes the connection - or only its sending half, which MCP clients do not do - has cancelled the stream;
   `notifications/cancelled` on another connection cancels it by its request id, and closes its connection, so a write
   the client no longer reads is let go. A cancel that comes a moment, up to 10 seconds, before the call it names ends
