@@ -105,10 +105,11 @@ class StdioCommandTest {
                                     assertThat(each.get("jsonrpc"))
                                             .as("JSON-RPC 2.0")
                                             .isEqualTo("2.0"));
-            assertThat(((Map<?, ?>) ran.answers.get(1).get("result")).get("structuredContent"))
+            // A call answered once is answered when the daemon answers, not in the order asked.
+            assertThat(((Map<?, ?>) answerTo(ran, 2).get("result")).get("structuredContent"))
                     .as("the daemon's reply")
                     .isEqualTo(Map.of("tasks", List.of(), "unrecognized", List.of()));
-            assertThat(((Map<?, ?>) ran.answers.get(2).get("result")).get("isError"))
+            assertThat(((Map<?, ?>) answerTo(ran, 3).get("result")).get("isError"))
                     .as("a refused call, still protocol")
                     .isEqualTo(true);
         }
@@ -192,6 +193,57 @@ class StdioCommandTest {
         }
     }
 
+    // Harm: a person's client hanging at its start for good on a daemon that takes porelo-mcp's own
+    // question at start but never answers it.
+    @Test
+    void aStartUpQuestionTheDaemonNeverAnswersEndsTheStartAfterItsBound() throws Exception {
+        VarlinkServer.Method silent =
+                (parameters, replies) -> {
+                    while (replies.open()) {
+                        try {
+                            Thread.sleep(20);
+                        } catch (InterruptedException ex) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                    }
+                };
+        try (var daemon =
+                new StandInDaemon(
+                        directory, StandInDaemon.tasks1(), Map.of("McpMethods", silent))) {
+            String java = ProcessHandle.current().info().command().orElseThrow();
+            Process process =
+                    new ProcessBuilder(
+                                    java,
+                                    "-cp",
+                                    System.getProperty("java.class.path"),
+                                    Main.class.getName(),
+                                    "tasks",
+                                    "--daemon-socket",
+                                    daemon.socket().toString())
+                            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                            .start();
+            try {
+                // Ended by the 30 s bound; a start that hangs is ended here, so it fails, not
+                // hangs.
+                boolean ended = process.waitFor(60, TimeUnit.SECONDS);
+                assertThat(ended).as("the start ended within 60 s").isTrue();
+                String err =
+                        new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+
+                assertThat(process.exitValue())
+                        .as("the daemon was not reached: %s", err)
+                        .isEqualTo(Main.NO_DAEMON);
+                assertThat(err)
+                        .as("says which question went unanswered")
+                        .contains("was not reached")
+                        .contains("McpMethods");
+            } finally {
+                process.destroyForcibly();
+            }
+        }
+    }
+
     // Harm: one overlong message holding memory without bound, or ending the session for good.
     @Test
     void aMessageOverItsBoundIsRefusedAndTheNextOneIsAnswered() throws Exception {
@@ -260,6 +312,13 @@ class StdioCommandTest {
                 assertThat(ran.err).as("says why").contains("no tools offered");
             }
         }
+    }
+
+    private static Map<String, Object> answerTo(Ran ran, int id) {
+        return ran.answers.stream()
+                .filter(each -> new java.math.BigDecimal(id).equals(each.get("id")))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("no answer to " + id + ": " + ran.lines));
     }
 
     /** McpMethods' answer, as porelod gives it. */

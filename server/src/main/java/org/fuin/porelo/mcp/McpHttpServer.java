@@ -3,9 +3,12 @@ package org.fuin.porelo.mcp;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.StandardProtocolFamily;
 import java.net.UnixDomainSocketAddress;
 import java.nio.channels.Channels;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
@@ -17,6 +20,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import org.fuin.porelo.wire.Json;
 import org.jspecify.annotations.Nullable;
@@ -170,7 +174,8 @@ public final class McpHttpServer implements AutoCloseable {
                             Channels.newOutputStream(client),
                             timeout::end,
                             timeout::arm,
-                            () -> closeQuietly(client));
+                            () -> closeQuietly(client),
+                            cancellation -> watching(client, cancellation));
             client.shutdownOutput();
             if (!streamed) {
                 discardArrived(client);
@@ -190,7 +195,8 @@ public final class McpHttpServer implements AutoCloseable {
             OutputStream out,
             Runnable endDeadline,
             Runnable armDeadline,
-            Runnable closeClient)
+            Runnable closeClient,
+            Streams.Watch watch)
             throws IOException {
         final HttpRequestHead head;
         try {
@@ -233,7 +239,8 @@ public final class McpHttpServer implements AutoCloseable {
                         // The head goes out as the stream starts, before its first reply.
                         events::head,
                         // A cancel also lets go of a write the client no longer reads.
-                        closeClient);
+                        closeClient,
+                        watch);
         // The deadline bounds the client: its request, and below its taking of the answer. How long
         // the daemon works on a call is the daemon's to bound.
         endDeadline.run();
@@ -405,6 +412,75 @@ public final class McpHttpServer implements AutoCloseable {
      * resets the connection and can drop the answer just sent. At most {@link #DISCARDED} bytes,
      * never read for, and never from a peer that is still sending.
      */
+    /**
+     * Watches a client while the daemon works on its call answered once: a client that closes its
+     * end cancels the call. Bytes beyond the request are read away, up to a bound, as after an
+     * answer. While watched, the channel does not block; the watch's end makes it block again.
+     */
+    private static Streams.Watching watching(SocketChannel client, Cancellation cancellation) {
+        final Selector selector;
+        final SelectionKey key;
+        try {
+            selector = Selector.open();
+            client.configureBlocking(false);
+            key = client.register(selector, SelectionKey.OP_READ);
+        } catch (IOException ex) {
+            throw new UncheckedIOException("The client's connection cannot be watched", ex);
+        }
+        final AtomicBoolean ended = new AtomicBoolean();
+        final Thread watcher =
+                Thread.ofVirtual()
+                        .name("mcp-call-watch")
+                        .start(() -> watch(client, selector, ended, cancellation));
+        return () -> {
+            ended.set(true);
+            selector.wakeup();
+            try {
+                watcher.join();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+            key.cancel();
+            try {
+                selector.close();
+                if (client.isOpen()) {
+                    client.configureBlocking(true);
+                }
+            } catch (IOException ex) {
+                // A connection that broke meanwhile is closed by its own thread.
+                closeQuietly(client);
+            }
+        };
+    }
+
+    private static void watch(
+            SocketChannel client,
+            Selector selector,
+            AtomicBoolean ended,
+            Cancellation cancellation) {
+        final java.nio.ByteBuffer discard = java.nio.ByteBuffer.allocate(8192);
+        int left = DISCARDED;
+        try {
+            while (!ended.get() && left > 0) {
+                selector.select();
+                selector.selectedKeys().clear();
+                if (ended.get()) {
+                    return;
+                }
+                discard.clear().limit(Math.min(discard.capacity(), left));
+                final int read = client.read(discard);
+                if (read < 0) {
+                    cancellation.cancel();
+                    return;
+                }
+                left -= read;
+            }
+        } catch (IOException ex) {
+            // A connection that broke is a client gone.
+            cancellation.cancel();
+        }
+    }
+
     private static void discardArrived(SocketChannel client) throws IOException {
         client.configureBlocking(false);
         final java.nio.ByteBuffer discard = java.nio.ByteBuffer.allocate(8192);

@@ -164,6 +164,46 @@ class HttpStreamsTest {
         assertThat(gone.await(10, TimeUnit.SECONDS)).as("the daemon's call ended").isTrue();
     }
 
+    // Harm: a call answered once whose client is gone holding the daemon's connection and one of
+    // the socket's places for as long as the daemon works, until no connection is served.
+    @Test
+    void aClientThatClosesTheConnectionEndsTheDaemonsCallAnsweredOnceAndFreesItsPlace()
+            throws Exception {
+        CountDownLatch working = new CountDownLatch(1);
+        CountDownLatch gone = new CountDownLatch(1);
+        start(
+                Map.of(
+                        "Start",
+                        (parameters, replies) -> {
+                            working.countDown();
+                            while (replies.open()) {
+                                try {
+                                    Thread.sleep(20);
+                                } catch (InterruptedException ex) {
+                                    Thread.currentThread().interrupt();
+                                    return;
+                                }
+                            }
+                            gone.countDown();
+                        }));
+        // The accept loop holds a place while it waits; what is free when idle is the measure.
+        Thread.sleep(300);
+        int idle = server.freePlaces();
+
+        try (SocketChannel client = connect()) {
+            send(client, onceCall(1, "Start"), false);
+            assertThat(working.await(5, TimeUnit.SECONDS)).as("the daemon has the call").isTrue();
+        }
+        boolean ended = gone.await(10, TimeUnit.SECONDS);
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (server.freePlaces() != idle && System.nanoTime() < until) {
+            Thread.sleep(10);
+        }
+
+        assertThat(ended).as("the daemon's call ended with the client").isTrue();
+        assertThat(server.freePlaces()).as("the connection's place is free").isEqualTo(idle);
+    }
+
     // Harm: a cancel sent as MCP's notification leaving the stream it names running.
     @Test
     void aCancelOnAnotherConnectionEndsTheStreamItNamesWithoutAnAnswer() throws Exception {
@@ -434,6 +474,14 @@ class HttpStreamsTest {
                 + "\",\"arguments\":{\"task\":\"t-1\"},\"_meta\":{\"progressToken\":\""
                 + token
                 + "\"}}}";
+    }
+
+    private static String onceCall(int id, String tool) {
+        return "{\"jsonrpc\":\"2.0\",\"id\":"
+                + id
+                + ",\"method\":\"tools/call\",\"params\":{\"name\":\""
+                + tool
+                + "\",\"arguments\":{\"task\":\"t-1\"}}}";
     }
 
     private static void send(SocketChannel client, String json, boolean takesEvents)

@@ -1,0 +1,2 @@
+title: 'A tool''s call answered once, without a progress token, ends when its client is gone, as a stream does: when a task''s client closes its connection or a cancel names the call, its daemon connection is closed and its place freed, and over stdio it no longer holds the next messages until the daemon answers.'
+type: fixed

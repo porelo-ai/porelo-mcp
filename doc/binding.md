@@ -38,8 +38,6 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 - A tool's call waits for the daemon's answer as long as the daemon works on it, a `Start` too: the daemon alone knows
   how long its work may take and bounds it. Only porelo-mcp's own questions at start, the interface's description, its
   `McpMethods` and, for `--check`, `GetInfo`, wait at most 30 seconds each, in this mode and on the person's socket.
-  A call answered once, not streamed, is not cancelled when its client goes away: it holds its connection until the
-  daemon answers, and over stdio the next message is read only then. A call that must be cancellable is streamed.
 - `porelo-mcp` never opens the person's own daemon socket in this mode.
 
 ## The MCP socket
@@ -151,11 +149,17 @@ client may use either.
   in `message`. When the daemon ends the stream, its last reply is also the tool's result.
 - Without a progress token a call is answered once, as the daemon answers a call without `more`. A method that answers
   once gives one reply to `more` too.
+- A call answered once is cancelled as a stream is: by `notifications/cancelled` naming it, and over a task's socket by
+  its client closing the connection. `porelo-mcp` then closes its daemon connection and frees its place. Over stdio it
+  runs beside the next messages, so its answer may come after theirs; the end of standard input ends every stream but
+  waits for the answers of the calls answered once. A cancelled call of `porelo-mcp planner` gets no answer, while its
+  request to the planner runs on within the planner request's own limit.
 - A stream that sends only on a change, such as `Watch`, ends only when the client sends `notifications/cancelled` for
   its request. `porelo-mcp` then closes that daemon connection and sends no answer, as MCP has it. What the stream sent
   is in its progress notifications.
-- At most 64 streams run at once in one stdio session or on one task's socket, and only one per request id; one more, or a second one under an
-  id still streaming, is refused at once with JSON-RPC error `-32600`. When standard output fails, every stream ends.
+- At most 64 calls, streamed or answered once, run at once in one stdio session or on one task's socket, and only one
+  per request id; one more, or a second one under an id still running, is refused at once with JSON-RPC error
+  `-32600`. When standard output fails, every call ends.
 - Over a task's socket such a call is answered `200` with `Content-Type: text/event-stream` and
   `Transfer-Encoding: chunked` as soon as the stream starts: each message, the progress and then the result, one
   `data:` line and an empty line in a chunk of its own, and the stream's end the last chunk, after which the connection

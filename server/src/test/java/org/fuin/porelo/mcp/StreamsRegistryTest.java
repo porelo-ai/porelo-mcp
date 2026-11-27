@@ -53,7 +53,8 @@ class StreamsRegistryTest {
                     }
                 };
         try (Streams streams =
-                new Streams(json -> true, new Streams.Registry(), true, () -> {}, slowClose)) {
+                new Streams(
+                        json -> true, new Streams.Registry(), true, () -> {}, slowClose, null)) {
             streams.start(
                     6,
                     cancellation -> {

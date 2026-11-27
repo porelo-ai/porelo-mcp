@@ -37,7 +37,17 @@ public final class SocketDaemon implements Daemon {
      */
     @Override
     public Map<String, Object> call(String method, Map<String, Object> parameters) {
-        return once(client -> client.callAwaitingAPerson(method, parameters));
+        return call(method, parameters, new Cancellation());
+    }
+
+    @Override
+    public Map<String, Object> call(
+            String method, Map<String, Object> parameters, Cancellation cancellation) {
+        return once(
+                client -> {
+                    cancellation.onCancel(() -> closeQuietly(client));
+                    return client.callAwaitingAPerson(method, parameters);
+                });
     }
 
     /**

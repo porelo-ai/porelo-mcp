@@ -340,22 +340,38 @@ public final class McpSession {
                                 // A cancelled request gets no answer, as MCP says.
                                 streams.send(cancellation, answer);
                             });
-            return started
-                    ? null
-                    : error(
-                            id,
-                            INVALID_REQUEST,
-                            "At most "
-                                    + Streams.MAX_STREAMS
-                                    + " streams run at once, one per request id");
+            return started ? null : busy(id);
         }
+        if (streams != null) {
+            return streams.once(
+                    id,
+                    cancellation -> answered(id, tool, given, cancellation, modern),
+                    () -> busy(id));
+        }
+        return answered(id, tool, given, new Cancellation(), modern);
+    }
+
+    /** A call answered once: the daemon's reply, or its refusal. */
+    private String answered(
+            Object id,
+            Tool tool,
+            Map<String, Object> given,
+            Cancellation cancellation,
+            boolean modern) {
         final Map<String, Object> reply;
         try {
-            reply = daemon.call(tool.method(), given);
+            reply = daemon.call(tool.method(), given, cancellation);
         } catch (VarlinkException ex) {
             return failed(id, ex, modern);
         }
         return result(id, toolResult(reply, false, modern));
+    }
+
+    private static String busy(Object id) {
+        return error(
+                id,
+                INVALID_REQUEST,
+                "At most " + Streams.MAX_STREAMS + " calls run at once, one per request id");
     }
 
     /** A streamed call: each reply as progress, the last one also the answer. */

@@ -19,6 +19,23 @@ public interface Daemon {
     Map<String, Object> call(String method, Map<String, Object> parameters);
 
     /**
+     * Calls a method once, as {@link #call(String, Map)} does, ended when cancelled: the daemon
+     * connection closes, so the daemon's own call sees its client gone. A daemon that cannot end a
+     * call early ignores the cancel.
+     *
+     * @param method The fully qualified method name.
+     * @param parameters The parameters, passed on unchanged.
+     * @param cancellation Ends the call when cancelled, the connection with it.
+     * @return The reply's parameters.
+     * @throws org.fuin.porelo.wire.varlink.VarlinkException As {@link #call(String, Map)}, and when
+     *     a cancel ended the connection.
+     */
+    default Map<String, Object> call(
+            String method, Map<String, Object> parameters, Cancellation cancellation) {
+        return call(method, parameters);
+    }
+
+    /**
      * Calls a method with {@code more}, handing each reply on as it comes, the last one too. A
      * method that answers once gives one reply. A daemon that cannot stream answers once.
      *

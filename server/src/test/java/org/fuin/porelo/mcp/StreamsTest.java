@@ -253,6 +253,50 @@ class StreamsTest {
         }
     }
 
+    // Harm: a call answered once, without a progress token, holding stdio deaf to the cancel and
+    // every request after it for as long as the daemon works.
+    @Test
+    void aCancelledCallAnsweredOnceEndsTheDaemonsCallGetsNoAnswerAndTheNextRequestIsAnswered()
+            throws Exception {
+        CountDownLatch working = new CountDownLatch(1);
+        CountDownLatch gone = new CountDownLatch(1);
+        VarlinkServer.Method works =
+                (parameters, replies) -> {
+                    working.countDown();
+                    while (replies.open()) {
+                        try {
+                            Thread.sleep(20);
+                        } catch (InterruptedException ex) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                    }
+                    gone.countDown();
+                };
+        try (var daemon = standIn(Map.of("Tail", works))) {
+            Stdio stdio = start(daemon);
+
+            stdio.send(call(1, "Tail", Map.of("task", "t-1"), null));
+            assertThat(working.await(10, TimeUnit.SECONDS)).as("the daemon has the call").isTrue();
+            stdio.send(
+                    "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/cancelled\","
+                            + "\"params\":{\"requestId\":1}}");
+            boolean ended = gone.await(10, TimeUnit.SECONDS);
+            stdio.send(request(2, "ping", Map.of()));
+            List<Map<String, Object>> after = stdio.until(2);
+
+            assertThat(ended).as("the daemon's call ended with the cancel").isTrue();
+            assertThat(after)
+                    .as("the ping answered, and nothing for the cancelled request: %s", after)
+                    .singleElement()
+                    .satisfies(
+                            each ->
+                                    assertThat(each.get("id"))
+                                            .as("the ping's")
+                                            .isEqualTo(new BigDecimal(2)));
+        }
+    }
+
     // Harm: one client opening stream after stream until the process has no thread or descriptor
     // left.
     @Test
