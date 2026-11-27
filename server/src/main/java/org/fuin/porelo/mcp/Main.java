@@ -251,7 +251,7 @@ public final class Main {
         final SocketDaemon daemon = new SocketDaemon(socket);
         final Object version;
         try {
-            version = daemon.call("org.varlink.service.GetInfo", Map.of()).get("version");
+            version = daemon.ask("org.varlink.service.GetInfo", Map.of()).get("version");
             if (!(version instanceof String named) || named.isBlank()) {
                 err.println("porelo-mcp: GetInfo on " + socket + " named no version");
                 return NO_DAEMON;
@@ -323,7 +323,7 @@ public final class Main {
         }
         List<Tool> offered;
         try {
-            offered = McpMethods.of(daemon).offered(tools, err);
+            offered = McpMethods.of(daemon::ask).offered(tools, err);
         } catch (VarlinkException ex) {
             if (ex.getErrorName() == null) {
                 err.println(

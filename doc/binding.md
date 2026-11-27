@@ -35,6 +35,11 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 - Its `org.varlink.service.GetInterfaceDescription` for `org.fuin.porelo.Tasks1` is the interface cut down to those
   methods. It keeps every type and every error, so it parses as a complete interface, and an error a remaining method
   raises is always declared.
+- A tool's call waits for the daemon's answer as long as the daemon works on it, a `Start` too: the daemon alone knows
+  how long its work may take and bounds it. Only porelo-mcp's own questions at start, the interface's description, its
+  `McpMethods` and, for `--check`, `GetInfo`, wait at most 30 seconds each, in this mode and on the person's socket.
+  A call answered once, not streamed, is not cancelled when its client goes away: it holds its connection until the
+  daemon answers, and over stdio the next message is read only then. A call that must be cancellable is streamed.
 - `porelo-mcp` never opens the person's own daemon socket in this mode.
 
 ## The MCP socket

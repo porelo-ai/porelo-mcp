@@ -199,6 +199,36 @@ class CallsTest {
         }
     }
 
+    // Harm: a start the daemon finishes reported to the agent as failed, because porelo-mcp gave
+    // up waiting before the daemon's work was done; the agent then starts it again.
+    @Test
+    void aCallTheDaemonWorksOnLongerThanTheWireDefaultIsAnsweredWithItsReply() throws Exception {
+        final java.time.Duration works =
+                org.fuin.porelo.wire.varlink.VarlinkClient.DEFAULT_DEADLINE.plusSeconds(3);
+        VarlinkServer.Method start =
+                (parameters, replies) -> {
+                    try {
+                        Thread.sleep(works);
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                    }
+                    replies.last(Map.of("task", "t-2"));
+                };
+        try (var daemon = standIn(Map.of("Start", start))) {
+            McpSession session = session(daemon);
+
+            Map<?, ?> answer =
+                    (Map<?, ?>) result(session.handle(call(3, "Start", Map.of("task", "t-2"))));
+
+            assertThat(answer.get("isError"))
+                    .as("the daemon's reply after %s, not a failure", works)
+                    .isEqualTo(false);
+            assertThat(answer.get("structuredContent"))
+                    .as("the daemon's reply as it came")
+                    .isEqualTo(Map.of("task", "t-2"));
+        }
+    }
+
     // Harm: an agent told of a broken daemon connection without learning which daemon it was.
     @Test
     void aDaemonThatClosesOrAnswersGarbageIsAnInternalErrorNamingItsSocket() throws Exception {

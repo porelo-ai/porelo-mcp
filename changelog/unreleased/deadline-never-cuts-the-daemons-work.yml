@@ -1,2 +1,2 @@
-title: 'A task''s call the daemon takes longer than 30 seconds to answer is answered when the daemon answers, no longer closed without a byte at the connection''s deadline, which now bounds only the client''s sending of its request and taking of the answer.'
+title: 'A tool''s call the daemon takes longer than 30 seconds to answer, a task''s start above all, is answered when the daemon answers: neither the Varlink call to the daemon nor the connection''s deadline, which now bounds only the client''s sending of its request and taking of the answer, cuts it off any more.'
 type: fixed

@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import org.fuin.porelo.wire.varlink.VarlinkClient;
 import org.fuin.porelo.wire.varlink.VarlinkException;
 
@@ -30,8 +31,29 @@ public final class SocketDaemon implements Daemon {
         return socket;
     }
 
+    /**
+     * Calls a method once and waits as long as the daemon works on it: only the daemon knows how
+     * long a start or a stop may rightly take, and bounds it.
+     */
     @Override
     public Map<String, Object> call(String method, Map<String, Object> parameters) {
+        return once(client -> client.callAwaitingAPerson(method, parameters));
+    }
+
+    /**
+     * Asks the daemon a question of porelo-mcp's own, which it answers at once, waiting at most
+     * {@link VarlinkClient#DEFAULT_DEADLINE}.
+     *
+     * @param method The fully qualified method name.
+     * @param parameters The parameters.
+     * @return The reply's parameters.
+     * @throws VarlinkException As {@link #call}, and when no reply came in time.
+     */
+    public Map<String, Object> ask(String method, Map<String, Object> parameters) {
+        return once(client -> client.call(method, parameters));
+    }
+
+    private Map<String, Object> once(Function<VarlinkClient, Map<String, Object>> exchange) {
         final VarlinkClient client;
         try {
             client = new VarlinkClient(socket);
@@ -40,7 +62,7 @@ public final class SocketDaemon implements Daemon {
         }
         final Map<String, Object> reply;
         try {
-            reply = client.call(method, parameters);
+            reply = exchange.apply(client);
         } catch (VarlinkException ex) {
             closeQuietly(client);
             throw ex.getErrorName() == null ? broken(ex) : ex;
@@ -119,7 +141,7 @@ public final class SocketDaemon implements Daemon {
      */
     public String describe(String interfaceName) {
         final Object description =
-                call(
+                ask(
                                 "org.varlink.service.GetInterfaceDescription",
                                 Map.of("interface", interfaceName))
                         .get("description");
