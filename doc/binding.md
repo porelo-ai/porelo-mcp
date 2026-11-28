@@ -8,8 +8,8 @@ by `porelod` alone; `porelo-mcp` passes every answer and refusal on as it came.
 - `porelod` starts one `porelo-mcp` process per task it allows one, as the person's own user, again on resume, and
   stops it with the task:
 
-      porelo-mcp serve --task <container> --socket <dir>/<container>.sock \
-          --daemon-socket <dir>/<container>.daemon.sock --limits <line>
+        porelo-mcp serve --task <container> --socket <dir>/<container>.sock \
+            --daemon-socket <dir>/<container>.daemon.sock --limits <line>
 
 - `<dir>` is `$XDG_RUNTIME_DIR/porelo/mcp`, made by `porelod` with mode `0700`. `porelod` removes a stale socket of the
   task before a start or a resume.
