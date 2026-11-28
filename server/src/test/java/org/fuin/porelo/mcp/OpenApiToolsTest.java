@@ -30,7 +30,7 @@ class OpenApiToolsTest {
                 }
             }
         }
-        assertThat(allowed).as("the real description's allowed reference set").hasSize(27);
+        assertThat(allowed).as("the real description's allowed reference set").hasSize(29);
         OpenApiTools.Description described = OpenApiTools.of(Json.write(fixture));
         McpSession session = new McpSession(described.tools(), (method, args) -> Map.of(), "0");
         Map<String, Object> reply =
@@ -68,8 +68,44 @@ class OpenApiToolsTest {
         assertThat(OpenApiTools.of(Json.write(fixture)).tools())
                 .as("a future marked operation")
                 .extracting(Tool::name)
-                .hasSize(28)
+                .hasSize(30)
                 .contains("future");
+    }
+
+    // Harm: an agent cannot apply a correction the window offers, cannot reach a board read's
+    // later pages, or sees a schema error instead of the last page, whose cursor is null.
+    @Test
+    void theRealDescriptionOffersCorrectionsAndPagedReadsWhoseLastPageValidates() throws Exception {
+        Map<String, Tool> tools = new LinkedHashMap<>();
+        OpenApiTools.of(Json.write(fixture()))
+                .tools()
+                .forEach(tool -> tools.put(tool.name(), tool));
+        assertThat(tools)
+                .as("the corrections marked for agents")
+                .containsKeys("previewCorrection", "saveCorrection");
+        assertThat(object(tools.get("saveCorrection").inputSchema().get("properties")))
+                .as("the confirmation, with its seen versions, travels as the body")
+                .containsKeys("project", "body");
+        for (String read : List.of("listStories", "getOutline", "listIssues", "searchItems")) {
+            Map<String, Object> properties =
+                    object(tools.get(read).inputSchema().get("properties"));
+            assertThat(properties).as(read + "'s paging parameters").containsKeys("limit", "after");
+            assertThat(object(properties.get("after")).get("type"))
+                    .as(read + "'s cursor is an opaque string")
+                    .isEqualTo("string");
+        }
+        Map<String, Object> outlineInput =
+                object(tools.get("getOutline").inputSchema().get("properties"));
+        assertThat(object(outlineInput.get("state")).get("type"))
+                .as("a filter is repeatable")
+                .isEqualTo("array");
+        Map<String, Object> outline =
+                object(
+                        object(tools.get("getOutline").outputSchema().get("$defs"))
+                                .get("components/schemas/Outline"));
+        assertThat(object(object(outline.get("properties")).get("next")).get("type"))
+                .as("the output schema admits the last page's null cursor")
+                .isEqualTo(List.of("string", "null"));
     }
 
     // Harm: an ambiguous or unsupported contract is accepted and calls the wrong operation.

@@ -154,7 +154,7 @@ class PlannerCommandTest {
                 }
             }
         }
-        assertThat(meant).as("the fixture marks operations for agents").hasSize(27);
+        assertThat(meant).as("the fixture marks operations for agents").hasSize(29);
         return meant;
     }
 

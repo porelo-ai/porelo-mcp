@@ -34,6 +34,36 @@ class PlannerDaemonTest {
                                 null));
     }
 
+    // Harm: a page cursor or a repeated filter is lost or altered, so the agent reads another page.
+    @Test
+    void aPagedFilteredReadSendsItsCursorAndEachFilterValue() throws Exception {
+        FakePlanner planner = new FakePlanner();
+        PlannerDaemon daemon =
+                new PlannerDaemon(planner, OpenApiTools.of(Json.write(OpenApiToolsTest.fixture())));
+        daemon.call(
+                "getOutline",
+                Map.of(
+                        "project",
+                        "sample",
+                        "limit",
+                        20,
+                        "after",
+                        "eyJyIjoiYWIifQ-_",
+                        "state",
+                        List.of("Review", "In Progress"),
+                        "repository",
+                        List.of("porelo-mcp")));
+        assertThat(planner.requests)
+                .as("the real outline read's REST request")
+                .containsExactly(
+                        new Planner.Request(
+                                "GET",
+                                "/projects/sample/outline?limit=20&after=eyJyIjoiYWIifQ-_"
+                                        + "&state=Review&state=In%20Progress"
+                                        + "&repository=porelo-mcp",
+                                null));
+    }
+
     // Harm: a path value injects a segment, query or fragment into the signed target.
     @Test
     void aPathArgumentIsEncodedAsOneUtf8Segment() {
