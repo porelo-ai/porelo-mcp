@@ -41,6 +41,9 @@ class PackagesIT {
     /** What x86-64 itself guarantees: nothing beyond it may be asked for. */
     private static final String BASELINE = "CX8, CMOV, FXSR, MMX, SSE, SSE2";
 
+    /** A released version: numbers joined by single dots. */
+    private static final String DOTTED = "[0-9]+(?:\\.[0-9]+)*";
+
     @TempDir Path directory;
 
     // Harm: a package that installs an executable which cannot run there, for want of a variable or
@@ -104,6 +107,41 @@ class PackagesIT {
             assertThat(required.group(1))
                     .as("%s: the x86-64 baseline only", executable)
                     .isEqualTo(BASELINE);
+        }
+    }
+
+    // Harm: an executable whose compiled-in Java has the Base64 decoder of CVE-2026-114938
+    // (Java4Shell), which decodes what an agent sends with it.
+    @Test
+    void theExecutableFromEachPackageIsBuiltByAGraalVmCeAtOrAboveTheJavaFloor() throws Exception {
+        // porelo-parent's enforcer range, such as [25.0.5-1,): its lower bound, where Maven's
+        // "-1" is the fourth number the image writes.
+        String parents = System.getProperty("mcp.java.floor");
+        assertThat(parents).as("the system property mcp.java.floor").isNotNull();
+        Matcher range = Pattern.compile("\\[(" + DOTTED + ")(?:-([0-9]+))?,\\)").matcher(parents);
+        assertThat(range.matches()).as("the parent's floor %s as a range", parents).isTrue();
+        String floor =
+                range.group(2) == null ? range.group(1) : range.group(1) + "." + range.group(2);
+        for (Path executable : List.of(fromDeb(), fromRpm())) {
+            String image = new String(Files.readAllBytes(executable), StandardCharsets.ISO_8859_1);
+
+            Matcher vm =
+                    Pattern.compile("com\\.oracle\\.svm\\.core\\.VM=([^\\x00]+)").matcher(image);
+            Matcher java =
+                    Pattern.compile("com\\.oracle\\.svm\\.core\\.VM\\.Java\\.Version=([^\\x00]+)")
+                            .matcher(image);
+
+            assertThat(vm.find()).as("%s: the image names its VM", executable).isTrue();
+            assertThat(vm.group(1))
+                    .as("%s: built by GraalVM CE", executable)
+                    .startsWith("GraalVM CE ");
+            assertThat(java.find()).as("%s: the image names its Java", executable).isTrue();
+            assertThat(java.group(1))
+                    .as("%s: a released Java, numbers only", executable)
+                    .matches(DOTTED);
+            assertThat(compareVersions(java.group(1), floor))
+                    .as("%s: Java %s at or above %s", executable, java.group(1), floor)
+                    .isGreaterThanOrEqualTo(0);
         }
     }
 
@@ -240,6 +278,20 @@ class PackagesIT {
             }
         }
         return components;
+    }
+
+    /** Compares two dotted versions number by number, a missing number counting as 0. */
+    private static int compareVersions(String left, String right) {
+        String[] a = left.split("\\.");
+        String[] b = right.split("\\.");
+        for (int i = 0; i < Math.max(a.length, b.length); i++) {
+            int x = i < a.length ? Integer.parseInt(a[i]) : 0;
+            int y = i < b.length ? Integer.parseInt(b[i]) : 0;
+            if (x != y) {
+                return Integer.compare(x, y);
+            }
+        }
+        return 0;
     }
 
     /** The notices' section of one component: its heading, up to the rule that opens the next. */

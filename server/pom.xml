@@ -363,6 +363,7 @@
                                 <mcp.version>${project.version}</mcp.version>
                                 <mcp.glibc.floor>${mcp.glibc.floor}</mcp.glibc.floor>
                                 <mcp.zlib.floor>${mcp.zlib.floor}</mcp.zlib.floor>
+                                <mcp.java.floor>${java.floor}</mcp.java.floor>
                             </systemPropertyVariables>
                         </configuration>
                     </plugin>
